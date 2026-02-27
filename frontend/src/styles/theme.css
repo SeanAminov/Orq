@@ -1,0 +1,35 @@
+/* Theme variables */
+:root,
+[data-theme="dark"] {
+  --bg-primary: #0f0f13;
+  --bg-secondary: #1a1a24;
+  --bg-card: #22222e;
+  --bg-input: #2a2a38;
+  --text-primary: #f0f0f5;
+  --text-secondary: #a0a0b8;
+  --text-muted: #666680;
+  --accent: #6c5ce7;
+  --accent-hover: #7c6cf7;
+  --accent-light: rgba(108, 92, 231, 0.15);
+  --success: #00cec9;
+  --danger: #ff6b6b;
+  --border: #2e2e40;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+[data-theme="light"] {
+  --bg-primary: #f5f5fa;
+  --bg-secondary: #ffffff;
+  --bg-card: #eeeef4;
+  --bg-input: #e4e4ee;
+  --text-primary: #1a1a2e;
+  --text-secondary: #555570;
+  --text-muted: #888898;
+  --accent: #6c5ce7;
+  --accent-hover: #5a4bd6;
+  --accent-light: rgba(108, 92, 231, 0.1);
+  --border: #d0d0dd;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}

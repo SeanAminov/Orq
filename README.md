@@ -1,123 +1,170 @@
 # Orq
+
 <p align="center">
   <img src="assets/orq.png" alt="Orq Logo" width="180"/>
 </p>
 
-<h1 align="center"></h1>
+Orq is an **agentic AI workspace** that connects multiple AI services into one room-based interface. Instead of switching between tools, type `@` in any room and Orq routes your request to the right system.
 
-Orq is a coordination layer for autonomous agents. It turns multi-agent workflows into a persistent, auditable system with shared memory, real-world tool execution, and structured orchestration.
-
-**Problem:** Most AI agent systems are stateless and isolated. They lose context, struggle to collaborate, and rarely execute full workflows end-to-end.
-
-**Solution:** Orq runs structured agent teams that plan, delegate, execute, and persist context — enabling autonomous systems to operate like coordinated digital teams.
+**Built for the Llama Lounge Hackathon at Snowflake (Agentic AI theme).**
 
 ---
 
-## What Orq Does
+## Sponsor Integrations
 
-- **Orchestrates multi-agent teams** with defined roles and delegation
-- **Persists shared memory** across tasks and sessions
-- **Executes real tools** (APIs and external systems)
-- **Tracks decisions and artifacts** for auditability
-- **Routes tasks intelligently** to specialized agents
-- **Maintains workflow state** across runs
-
----
-
-## Demo Flow (Hackathon)
-
-1. User submits a high-level goal  
-   _(ex: “Research X, create a plan, and execute outreach”)_
-
-2. Orq spawns a structured **agent team**
-   - Research Agent  
-   - Planning Agent  
-   - Execution Agent  
-   - QA Agent  
-
-3. Agents collaborate and delegate subtasks
-
-4. Agents retrieve context from **persistent memory**
-
-5. Agents execute real-world actions through connected tools
-
-6. Orq stores outputs as structured **artifacts**
-
-7. Workflow trace is saved for reuse and inspection
+| Integration | What It Does | Trigger |
+|------------|-------------|---------|
+| **CrewAI** | Multi-agent orchestration -- AI agents collaborate on complex tasks | `@crew` or `@orq` |
+| **Composio** | Connects to real Gmail, Google Docs, and Google Drive via OAuth | `@action` or `@orq` |
+| **Snowflake Cortex** | NLP functions -- sentiment analysis, translation, summarization | `@data` or `@orq` |
+| **Skyfire** | AI-native payment protocol -- pay-per-query LLM access and tokens | `@pay` or `@orq` |
 
 ---
 
-## Key Features
+## How It Works
 
-### 1) Parallel Agent Teams
-Agents operate as coordinated units with defined roles and delegation paths. Orq enables structured collaboration instead of single-response generation.
+1. **Rooms** -- Create rooms for different contexts (team, personal, project)
+2. **@ Mentions** -- Type `@` in any room to see an autocomplete dropdown with AI commands
+3. **Auto-routing** -- Use `@orq` for auto-detection or specific triggers (`@crew`, `@action`, `@data`, `@pay`, `@summary`)
+4. **Activity** -- Every AI action is logged to a shared Activity panel
 
-### 2) Persistent Shared Memory
-Orq stores:
-- Prior decisions
-- Summaries
-- Extracted entities
-- Tool outputs
-- Generated artifacts
+### @ Commands
 
-Agents build on prior work instead of resetting.
-
-### 3) Real Tool Execution
-Orq integrates external systems to perform real actions such as:
-- Email outreach
-- Document creation
-- Data logging
-- API-triggered workflows
-
-Agents move from reasoning to execution.
-
-### 4) Workflow Traceability
-Every run produces:
-- A structured execution trace
-- Agent-to-agent delegation logs
-- Persisted artifacts
-- Replayable workflows
-
----
-
-## Architecture
-
-Orq follows a modular orchestration architecture:
-
-- **UI Layer** – Goal submission + real-time agent timeline
-- **Orchestrator API** – Workflow routing, state management, policy control
-- **Agent Runtime** – Multi-agent execution engine
-- **Tool Layer** – External API connectors
-- **Memory Layer** – Vector + structured persistence
-- **Data Layer (Optional)** – Structured enterprise data access
-
-![Orq Architecture](assets/architecture.png)
+| Trigger | What It Does |
+|---------|-------------|
+| `@orq` | AI auto-detects intent and routes to the right service |
+| `@crew` | Multi-agent task (CrewAI) |
+| `@action` | Gmail, Docs, Drive actions (Composio) |
+| `@data` | Sentiment, Translate, Summarize (Snowflake Cortex) |
+| `@pay` | Payments & tokens (Skyfire) |
+| `@summary` | Quick summarization (Cortex) |
 
 ---
 
 ## Tech Stack
 
-### Frontend
-- Next.js (React)
-- TailwindCSS
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19 + Vite + Framer Motion |
+| Backend | FastAPI (Python) + SQLAlchemy + SQLite |
+| Agents | CrewAI (multi-agent orchestration) |
+| Tools | Composio (Gmail, Google Docs, Drive) |
+| Data | Snowflake + Cortex AI |
+| Payments | Skyfire (AI-native payment protocol) |
+| Auth | JWT cookie-based sessions |
 
-### Backend
-- FastAPI (Python) or Node.js (Express)
-- WebSocket support for live agent updates
+---
 
-### Agents
-- CrewAI (multi-agent orchestration)
-- Structured role definitions + prompt templates
+## Quick Start
 
-### Tools
-- Composio (external tool integrations)
-- Custom tool wrappers (HTTP, database, internal services)
+### 1. Backend
 
-### Memory & Data
-- Postgres (workflow state, traces, artifacts)
-- Vector database (long-term memory retrieval)
-- Snowflake (optional structured data integration)
+```bash
+cd backend
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Mac/Linux
+pip install -r requirements.txt
+```
 
-### Infrastructure
-- Docker
-- Cloud deployment ready (Vercel / Render / Railway / Fly)
+Create a `.env` file in `backend/` (see API Keys section below), then:
+
+```bash
+python seed.py               # creates demo accounts + rooms
+uvicorn main:app --reload    # starts on http://localhost:8000
+```
+
+### 2. Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev                  # starts on http://localhost:5173
+```
+
+### 3. Login
+
+Open **http://localhost:5173** and log in:
+
+| Name | Email | Password |
+|------|-------|----------|
+| Sean | sean@orq.dev | pass |
+| Yug | yug@orq.dev | pass |
+
+### 4. Test It
+
+- **Type `@` in the chat input** -- autocomplete dropdown should appear
+- **`@orq what is agentic AI?`** -- general AI chat (auto-classified)
+- **`@crew Research the latest trends in agentic AI`** -- launches CrewAI multi-agent task
+- **`@action Check my latest emails`** -- reads Gmail via Composio
+- **`@data Analyze sentiment: I love this product!`** -- Snowflake Cortex NLP
+- **`@pay Check my Skyfire balance`** -- Skyfire payment status
+- **`@summary Summarize: [paste text]`** -- Cortex summarization
+- **Click "+ New Room"** -- create rooms and invite members
+- **Plain messages (no @)** -- team chat visible to room members
+
+---
+
+## API Keys (.env)
+
+Create `backend/.env` with:
+
+```env
+OPENAI_API_KEY=sk-...
+COMPOSIO_API_KEY=...
+SNOWFLAKE_ACCOUNT=...
+SNOWFLAKE_USER=...
+SNOWFLAKE_PASSWORD=...
+SKYFIRE_API_KEY=...
+JWT_SECRET=any-random-string
+```
+
+| Service | Get Key |
+|---------|---------|
+| OpenAI | [platform.openai.com](https://platform.openai.com) |
+| Composio | [composio.dev](https://composio.dev) |
+| Snowflake | [go.dataops.live/llama-lounge-hackathon](https://go.dataops.live/llama-lounge-hackathon) |
+| Skyfire | [skyfire.xyz](https://skyfire.xyz) |
+
+---
+
+## Seed Rooms
+
+Running `python seed.py` creates:
+
+| Room | Members | GitHub Repo |
+|------|---------|-------------|
+| Orq Team | Sean + Yug | SeanAminov/Orq |
+| Sean & Yug | Sean + Yug | -- |
+| Sean's Workspace | Sean only | -- |
+| Yug's Workspace | Yug only | -- |
+
+---
+
+## Project Structure
+
+```
+backend/
+  main.py          # FastAPI app (all endpoints + AI routing)
+  models.py        # SQLAlchemy models (User, Room, Message, AgentRun)
+  seed.py          # DB seeding (accounts + rooms)
+  config.py        # Lazy singletons (OpenAI, Composio, Snowflake, Skyfire)
+  crew.py          # CrewAI general crew (3 agents)
+  candidate_crew.py # Candidate research crew (5 agents)
+  digest_crew.py   # Commit digest crew (3 agents)
+  github_tools.py  # GitHub REST API tools
+  database.py      # SQLAlchemy engine + session
+
+frontend/
+  src/
+    pages/         # Landing, Login, Signup, Dashboard
+    components/    # ChatPanel, RoomSidebar, ActivityPanel, DocsPanel, etc.
+    styles/        # CSS (dashboard, theme)
+    context/       # ThemeContext
+```
+
+---
+
+## Team
+
+**Sean Aminov** & **Yug More**

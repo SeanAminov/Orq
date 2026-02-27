@@ -1,0 +1,14 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+python-dotenv>=1.0
+openai>=1.51
+python-jose[cryptography]>=3.3
+bcrypt>=4.0
+composio>=0.10
+composio-openai>=0.10
+requests>=2.31
+sqlalchemy>=2.0
+loguru
+crewai>=0.108
+snowflake-connector-python>=3.6
