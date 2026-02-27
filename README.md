@@ -3,7 +3,7 @@
   <img src="assets/orq.png" alt="Orq Logo" width="180"/>
 </p>
 
-<h1 align="center">Orq</h1>
+<h1 align="center"></h1>
 
 Orq is a coordination layer for autonomous agents. It turns multi-agent workflows into a persistent, auditable system with shared memory, real-world tool execution, and structured orchestration.
 
