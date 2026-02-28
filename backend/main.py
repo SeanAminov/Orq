@@ -356,8 +356,8 @@ def run_agent_in_room(room_id: str, body: RoomRunBody, user: User = Depends(get_
         return {"reply": reply, "intent": "workflow", "run_id": run_id, "tokens": tokens, "cost_usd": f"{cost:.6f}"}
 
     # classify intent -- use hint if provided and valid
-    valid_intents = {"CREW", "ACTION", "DATA", "PAY", "CHAT"}
-    hint_map = {"SUMMARY": "DATA"}  # @summary routes to Snowflake Cortex
+    valid_intents = {"CREW", "ACTION", "DATA", "PAY", "CHAT", "RESEARCH", "CLEAN"}
+    hint_map = {"SUMMARY": "DATA", "RESEARCH": "RESEARCH", "CLEAN": "CLEAN"}
 
     if body.intent_hint:
         raw_hint = body.intent_hint.upper()
@@ -389,18 +389,25 @@ def run_agent_in_room(room_id: str, body: RoomRunBody, user: User = Depends(get_
 
     # route to handler
     handlers = {
-        "CHAT":   _do_chat,
-        "CREW":   _do_crew,
-        "ACTION": _do_composio_action,
-        "DATA":   _do_snowflake_query,
-        "PAY":    _do_skyfire_payment,
+        "CHAT":     _do_chat,
+        "CREW":     _do_crew,
+        "ACTION":   _do_composio_action,
+        "DATA":     _do_snowflake_query,
+        "PAY":      _do_skyfire_payment,
+        "RESEARCH": _do_skyfire_research,
+        "CLEAN":    _do_skyfire_clean,
     }
     handler = handlers.get(intent, _do_chat)
+
+    # @summary strips the trigger, so re-inject "summarize:" context
+    handler_message = message
+    if body.intent_hint and body.intent_hint.upper() == "SUMMARY":
+        handler_message = f"summarize the following: {message}"
 
     tokens = 0
     cost = 0.0
     try:
-        result = handler(message, user, db, room_id)
+        result = handler(handler_message, user, db, room_id)
         # handlers return {"reply": ..., "tokens": ..., "cost": ...}
         reply = result.get("reply", str(result)) if isinstance(result, dict) else str(result)
         tokens = result.get("tokens", 0) if isinstance(result, dict) else 0
@@ -765,6 +772,8 @@ def _run_workflow(workflow: "Workflow", extra_input: str, user: User, db: Sessio
             "crew": _do_crew,
             "data": _do_snowflake_query,
             "pay": _do_skyfire_payment,
+            "research": _do_skyfire_research,
+            "clean": _do_skyfire_clean,
         }
         handler = handlers.get(step_type, _do_chat)
         try:
@@ -1586,7 +1595,221 @@ def _safe_json(text: str) -> dict:
         return {}
 
 
-# --- 5. Pay (Skyfire) -----------------------------------------------------
+# --- 5a. Research (Skyfire + BuildShip companyResearcher) -------------------
+
+SKYFIRE_RESEARCH_SERVICE_ID = "b07adb24-85fc-4b4d-92ae-54571a7bdfbf"
+SKYFIRE_RESEARCH_ENDPOINT = "https://ct7rdx.buildship.run/executeTool/U40tJouoY9wAaIhk8Z37/22e5a0a4-5ead-442b-ab12-4ece693ca2d9"
+
+def _do_skyfire_research(message: str, user: User, db: Session, room_id: str = None) -> dict:
+    """Company research via Skyfire-paid BuildShip companyResearcher service.
+    Accepts an email or domain and returns structured company info."""
+    if not SKYFIRE_API_KEY:
+        return _cost_result("Skyfire not configured. Set SKYFIRE_API_KEY in .env.")
+    client = get_openai_client()
+    if not client:
+        return _cost_result("OpenAI not configured.")
+
+    total_tokens = 0
+    total_cost = 0.0
+    memory_ctx = _get_user_memories(db, user.id, room_id)
+
+    # Extract email or domain from the user's message using LLM
+    extract_resp = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": (
+                "Extract an email address or company domain from the user's message. "
+                "Return ONLY the email or domain, nothing else. "
+                "If the message contains a person's name, try to derive their company from context. "
+                "If you cannot find an email or domain, return 'NONE'."
+                + memory_ctx
+            )},
+            {"role": "user", "content": message},
+        ],
+    )
+    ci = _calc_cost(extract_resp.usage)
+    total_tokens += ci["tokens"]
+    total_cost += ci["cost"]
+    email_or_domain = extract_resp.choices[0].message.content.strip()
+    logger.info(f"[skyfire-research] extracted: {email_or_domain}")
+
+    if email_or_domain == "NONE" or len(email_or_domain) < 3:
+        return _cost_result(
+            "**Company Research**\n\n"
+            "I need an email address or company domain to research.\n\n"
+            "Try: `@research google.com` or `@research john@acme.com`",
+            total_tokens, total_cost,
+        )
+
+    sf_headers = {"skyfire-api-key": SKYFIRE_API_KEY, "Content-Type": "application/json"}
+
+    try:
+        import time as _time
+        # Step 1: Create a Skyfire pay token for the companyResearcher service
+        token_resp = requests.post(
+            f"{SKYFIRE_BASE_URL}/api/v1/tokens", headers=sf_headers,
+            json={
+                "type": "pay",
+                "tokenAmount": "0.01",
+                "sellerServiceId": SKYFIRE_RESEARCH_SERVICE_ID,
+                "expiresAt": int(_time.time()) + 300,
+            },
+            timeout=10,
+        )
+        if not token_resp.ok:
+            err = token_resp.text[:200]
+            return _cost_result(
+                f"**Company Research**\n\n"
+                f"Could not create Skyfire payment token (status {token_resp.status_code}).\n\n"
+                f"Error: {err}\n\n"
+                f"_Ensure your Skyfire wallet is funded at [skyfire.xyz](https://skyfire.xyz)._",
+                total_tokens, total_cost,
+            )
+
+        token_data = token_resp.json()
+        token_jwt = token_data.get("token") or token_data.get("data", {}).get("token", "")
+        logger.info(f"[skyfire-research] token created: {token_jwt[:30]}...")
+
+        # Step 2: Call the BuildShip companyResearcher service
+        service_resp = requests.post(
+            SKYFIRE_RESEARCH_ENDPOINT,
+            headers={
+                "Content-Type": "application/json",
+                "skyfire_kya_pay_token": token_jwt,
+            },
+            json={"emailOrDomain": email_or_domain},
+            timeout=30,
+        )
+
+        if service_resp.ok:
+            data = service_resp.json() if service_resp.headers.get("content-type", "").startswith("application/json") else {"raw": service_resp.text}
+            output = data.get("output", data)
+
+            # Format the company info nicely
+            if isinstance(output, dict):
+                parts = [f"**Company Research: {email_or_domain}**\n"]
+                for k, v in output.items():
+                    if v and v != "N/A":
+                        label = k.replace("_", " ").title()
+                        parts.append(f"- **{label}**: {v}")
+                parts.append(f"\n_Powered by Skyfire + BuildShip | Cost: $0.01_")
+                return _cost_result("\n".join(parts), total_tokens, total_cost)
+            else:
+                return _cost_result(
+                    f"**Company Research: {email_or_domain}**\n\n{output}\n\n"
+                    f"_Powered by Skyfire + BuildShip | Cost: $0.01_",
+                    total_tokens, total_cost,
+                )
+        else:
+            return _cost_result(
+                f"**Company Research**\n\n"
+                f"Service returned status {service_resp.status_code}.\n\n"
+                f"Response: {service_resp.text[:300]}\n\n"
+                f"_The BuildShip service may be temporarily unavailable._",
+                total_tokens, total_cost,
+            )
+
+    except requests.exceptions.Timeout:
+        return _cost_result("Company research request timed out. The service may be temporarily unavailable.", total_tokens, total_cost)
+    except Exception as e:
+        return _cost_result(f"Company research error: {e}", total_tokens, total_cost)
+
+
+# --- 5b. Clean (Skyfire + BuildShip aiSlopCleaner) -------------------------
+
+SKYFIRE_CLEAN_SERVICE_ID = "2236ee9f-339f-4d77-a22e-b3df3df2f34a"
+SKYFIRE_CLEAN_ENDPOINT = "https://ct7rdx.buildship.run/executeTool/xs2eHScGZnrjzDiO49pk/ff20942c-670d-4a26-843a-5b0af0894a85"
+
+def _do_skyfire_clean(message: str, user: User, db: Session, room_id: str = None) -> dict:
+    """Refine AI-generated text via Skyfire-paid BuildShip aiSlopCleaner service.
+    Takes messy AI-generated transcript and returns clean, human-like text."""
+    if not SKYFIRE_API_KEY:
+        return _cost_result("Skyfire not configured. Set SKYFIRE_API_KEY in .env.")
+
+    total_tokens = 0
+    total_cost = 0.0
+
+    transcript = message.strip()
+    if len(transcript) < 10:
+        return _cost_result(
+            "**AI Text Cleaner**\n\n"
+            "I need some AI-generated text to clean up.\n\n"
+            "Try: `@clean <paste your AI-generated text here>`",
+            total_tokens, total_cost,
+        )
+
+    sf_headers = {"skyfire-api-key": SKYFIRE_API_KEY, "Content-Type": "application/json"}
+
+    try:
+        import time as _time
+        # Step 1: Create a Skyfire pay token for the aiSlopCleaner service
+        token_resp = requests.post(
+            f"{SKYFIRE_BASE_URL}/api/v1/tokens", headers=sf_headers,
+            json={
+                "type": "pay",
+                "tokenAmount": "0.03",
+                "sellerServiceId": SKYFIRE_CLEAN_SERVICE_ID,
+                "expiresAt": int(_time.time()) + 300,
+            },
+            timeout=10,
+        )
+        if not token_resp.ok:
+            err = token_resp.text[:200]
+            return _cost_result(
+                f"**AI Text Cleaner**\n\n"
+                f"Could not create Skyfire payment token (status {token_resp.status_code}).\n\n"
+                f"Error: {err}\n\n"
+                f"_Ensure your Skyfire wallet is funded at [skyfire.xyz](https://skyfire.xyz)._",
+                total_tokens, total_cost,
+            )
+
+        token_data = token_resp.json()
+        token_jwt = token_data.get("token") or token_data.get("data", {}).get("token", "")
+        logger.info(f"[skyfire-clean] token created: {token_jwt[:30]}...")
+
+        # Step 2: Call the BuildShip aiSlopCleaner service
+        service_resp = requests.post(
+            SKYFIRE_CLEAN_ENDPOINT,
+            headers={
+                "Content-Type": "application/json",
+                "skyfire_kya_pay_token": token_jwt,
+            },
+            json={"transcript": transcript},
+            timeout=30,
+        )
+
+        if service_resp.ok:
+            # Response is a string
+            cleaned = service_resp.text
+            # Try to parse as JSON string if it's wrapped
+            try:
+                cleaned = json.loads(cleaned)
+                if isinstance(cleaned, dict):
+                    cleaned = cleaned.get("output", cleaned.get("result", str(cleaned)))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+            return _cost_result(
+                f"**Cleaned Text** _(via Skyfire + BuildShip)_\n\n{cleaned}\n\n"
+                f"_AI slop removed | Cost: $0.03_",
+                total_tokens, total_cost,
+            )
+        else:
+            return _cost_result(
+                f"**AI Text Cleaner**\n\n"
+                f"Service returned status {service_resp.status_code}.\n\n"
+                f"Response: {service_resp.text[:300]}\n\n"
+                f"_The BuildShip service may be temporarily unavailable._",
+                total_tokens, total_cost,
+            )
+
+    except requests.exceptions.Timeout:
+        return _cost_result("Text cleaning request timed out. The service may be temporarily unavailable.", total_tokens, total_cost)
+    except Exception as e:
+        return _cost_result(f"Text cleaning error: {e}", total_tokens, total_cost)
+
+
+# --- 5c. Pay (Skyfire) ----------------------------------------------------
 
 def _do_skyfire_payment(message: str, user: User, db: Session, room_id: str = None) -> dict:
     if not SKYFIRE_API_KEY:
@@ -1606,7 +1829,7 @@ def _do_skyfire_payment(message: str, user: User, db: Session, room_id: str = No
                 "You are a payment classifier. Given the user's message, decide "
                 "which Skyfire operation to perform. Respond with ONLY one label:\n"
                 "  BALANCE   - check wallet or balance\n"
-                "  LLM_PROXY - use Skyfire's AI proxy to answer a question (pay-per-query)\n"
+                "  LLM_PROXY - use a Skyfire paid service (company research, AI query)\n"
                 "  TOKEN     - create a payment token or session\n"
                 "  PAY       - send a payment or transfer funds\n"
                 "  INFO      - explain Skyfire or its capabilities\n"
@@ -1625,55 +1848,68 @@ def _do_skyfire_payment(message: str, user: User, db: Session, room_id: str = No
 
     try:
         if "BALANCE" in operation:
-            health_resp = requests.get(f"{SKYFIRE_BASE_URL}/v1/health", headers=sf_headers, timeout=10)
-            tokens_resp = requests.get(f"{SKYFIRE_BASE_URL}/api/v1/tokens", headers=sf_headers, timeout=10)
-            health = health_resp.json() if health_resp.ok else {"error": health_resp.status_code}
-            tokens = tokens_resp.json() if tokens_resp.ok else {"error": tokens_resp.status_code}
-            token_list = tokens.get("data", [])
+            balance_resp = requests.get(
+                f"{SKYFIRE_BASE_URL}/api/v1/agents/balance", headers=sf_headers, timeout=10,
+            )
+            if balance_resp.ok:
+                bal = balance_resp.json()
+                bal_data = bal.get("data", bal)
+                available = bal_data.get("balance", bal_data.get("availableBalance", "N/A"))
+                currency = bal_data.get("currency", "USD")
+                return _cost_result(
+                    f"**Skyfire Wallet**\n\n"
+                    f"Balance: **{available} {currency}**\n\n"
+                    f"_Wallet is active and ready for agent transactions._",
+                    total_tokens, total_cost,
+                )
             return _cost_result(
-                f"**Skyfire Account Status**\n\n"
-                f"Health: {'Connected' if health.get('ok') else 'Error'}\n"
-                f"Active Tokens: {len(token_list)}\n\n"
-                + ("```json\n" + json.dumps(token_list[:5], indent=2, default=str) + "\n```"
-                   if token_list else "_No active payment tokens._"),
+                f"**Skyfire Wallet**\n\nCould not retrieve balance (status {balance_resp.status_code}).\n\n"
+                f"_Check your SKYFIRE_API_KEY in .env or visit [skyfire.xyz](https://skyfire.xyz)._",
                 total_tokens, total_cost,
             )
 
         elif "LLM_PROXY" in operation:
+            # Use Skyfire-paid BuildShip companyResearcher as the default paid AI service
+            import time as _time
             token_resp = requests.post(
                 f"{SKYFIRE_BASE_URL}/api/v1/tokens", headers=sf_headers,
-                json={"type": "pay", "tokenAmount": "0.01", "sellerDomainOrUrl": "https://openrouter.ai"},
+                json={
+                    "type": "pay",
+                    "tokenAmount": "0.01",
+                    "sellerServiceId": SKYFIRE_RESEARCH_SERVICE_ID,
+                    "expiresAt": int(_time.time()) + 300,
+                },
                 timeout=10,
             )
-            proxy_headers = dict(sf_headers)
             if token_resp.ok:
-                token_data = token_resp.json().get("data", {})
-                token_id = token_data.get("token") or token_data.get("id", "")
-                if token_id:
-                    proxy_headers["Authorization"] = f"Bearer {token_id}"
-            proxy_resp = requests.post(
-                f"{SKYFIRE_BASE_URL}/proxy/openrouter/v1/chat/completions",
-                headers=proxy_headers,
-                json={
-                    "model": "openai/gpt-4o-mini",
-                    "messages": [
-                        {"role": "system", "content": "You are a helpful assistant powered by Skyfire's pay-per-query network."},
-                        {"role": "user", "content": message},
-                    ],
-                    "max_tokens": 1000,
-                },
-                timeout=30,
-            )
-            if proxy_resp.ok:
-                data = proxy_resp.json()
-                answer = data.get("choices", [{}])[0].get("message", {}).get("content", "No response")
-                usage = data.get("usage", {})
-                proxy_tokens = usage.get("total_tokens", 0)
-                total_tokens += proxy_tokens
-                total_cost += proxy_tokens / 1000 * _COST_PER_1K_OUTPUT
-                payment_info = f"\n\n_Tokens used: {usage.get('total_tokens', 'N/A')} | Paid via Skyfire_" if usage else ""
-                return _cost_result(f"**Skyfire AI Response**\n\n{answer}{payment_info}", total_tokens, total_cost)
+                token_data = token_resp.json()
+                token_jwt = token_data.get("token") or token_data.get("data", {}).get("token", "")
+                # Try calling companyResearcher with the query as a domain/email
+                try:
+                    svc_resp = requests.post(
+                        SKYFIRE_RESEARCH_ENDPOINT,
+                        headers={"Content-Type": "application/json", "skyfire_kya_pay_token": token_jwt},
+                        json={"emailOrDomain": message.split()[-1] if message.strip() else "skyfire.xyz"},
+                        timeout=30,
+                    )
+                    if svc_resp.ok:
+                        data = svc_resp.json() if svc_resp.headers.get("content-type", "").startswith("application/json") else {"raw": svc_resp.text}
+                        output = data.get("output", data)
+                        if isinstance(output, dict):
+                            parts = ["**Skyfire AI Response** _(via BuildShip companyResearcher)_\n"]
+                            for k, v in output.items():
+                                if v and v != "N/A":
+                                    parts.append(f"- **{k.replace('_', ' ').title()}**: {v}")
+                            parts.append(f"\n_Paid via Skyfire token | Cost: $0.01_")
+                            return _cost_result("\n".join(parts), total_tokens, total_cost)
+                        return _cost_result(
+                            f"**Skyfire AI Response** _(via BuildShip)_\n\n{output}\n\n_Paid via Skyfire | Cost: $0.01_",
+                            total_tokens, total_cost,
+                        )
+                except Exception:
+                    pass
 
+            # Fallback to direct OpenAI
             fallback = client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=[
@@ -1686,34 +1922,76 @@ def _do_skyfire_payment(message: str, user: User, db: Session, room_id: str = No
             total_cost += ci2["cost"]
             return _cost_result(
                 f"**Skyfire AI Response** _(via OpenAI fallback)_\n\n{fallback.choices[0].message.content}\n\n"
-                f"_Note: Skyfire LLM proxy requires funded wallet. Response served via direct OpenAI as fallback._",
+                f"_Note: Skyfire paid services require funded wallet. Response served via direct OpenAI as fallback._",
                 total_tokens, total_cost,
             )
 
         elif "TOKEN" in operation:
+            import time as _time
+            parse_resp = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": (
+                        "Extract token creation details from the user's message. "
+                        "Return JSON: {\"type\": \"kya|pay|kya+pay\", \"amount\": \"0.10\", "
+                        "\"seller_id\": \"service-uuid\"}. "
+                        "Known services: companyResearcher (b07adb24-85fc-4b4d-92ae-54571a7bdfbf, $0.01), "
+                        "aiSlopCleaner (2236ee9f-339f-4d77-a22e-b3df3df2f34a, $0.03). "
+                        "Default: type=pay, amount=0.01, seller_id=b07adb24-85fc-4b4d-92ae-54571a7bdfbf"
+                    )},
+                    {"role": "user", "content": message},
+                ],
+            )
+            ci_t = _calc_cost(parse_resp.usage)
+            total_tokens += ci_t["tokens"]
+            total_cost += ci_t["cost"]
+            tok_params = _safe_json(parse_resp.choices[0].message.content)
+            token_type = tok_params.get("type", "pay")
+            token_amount = tok_params.get("amount", "0.01")
+            seller_id = tok_params.get("seller_id", SKYFIRE_RESEARCH_SERVICE_ID)
+            token_body = {
+                "type": token_type,
+                "tokenAmount": str(token_amount),
+                "sellerServiceId": seller_id,
+                "expiresAt": int(_time.time()) + 300,
+            }
             token_resp = requests.post(
                 f"{SKYFIRE_BASE_URL}/api/v1/tokens", headers=sf_headers,
-                json={"type": "pay", "tokenAmount": "0.10", "sellerDomainOrUrl": "https://openrouter.ai"},
-                timeout=10,
+                json=token_body, timeout=10,
             )
             if token_resp.ok:
-                return _cost_result(f"**Skyfire Token Created**\n\n```json\n{json.dumps(token_resp.json(), indent=2, default=str)}\n```", total_tokens, total_cost)
+                return _cost_result(
+                    f"**Skyfire Token Created**\n\n"
+                    f"Type: `{token_type}`\nAmount: `{token_amount} USD`\nService: `{seller_id[:20]}...`\n\n"
+                    f"```json\n{json.dumps(token_resp.json(), indent=2, default=str)}\n```",
+                    total_tokens, total_cost,
+                )
+            err_msg = "Unknown error"
+            try:
+                err_msg = token_resp.json().get("message", token_resp.text[:200])
+            except Exception:
+                err_msg = token_resp.text[:200]
             return _cost_result(
-                f"**Skyfire Token Request**\n\nType: `pay`\nAmount: `0.10 USDC`\nSeller: `openrouter.ai`\n\n"
-                f"Status: {token_resp.status_code} -- {token_resp.json().get('message', token_resp.text[:200])}\n\n"
-                f"_Token creation requires a funded Skyfire wallet. Visit [skyfire.xyz](https://skyfire.xyz) to add funds._",
+                f"**Skyfire Token Request**\n\n"
+                f"Type: `{token_type}` | Amount: `{token_amount} USD` | Seller: `{seller_url}`\n\n"
+                f"Status: {token_resp.status_code} -- {err_msg}\n\n"
+                f"_Token creation requires a funded Skyfire wallet at [skyfire.xyz](https://skyfire.xyz)._",
                 total_tokens, total_cost,
             )
 
         elif "PAY" in operation:
+            import time as _time
             parse_resp = client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": (
                         "Extract payment details from the user's message. "
-                        "Return JSON: {\"amount\": number, \"currency\": \"USD\", "
-                        "\"recipient\": \"string\", \"description\": \"string\"}. "
-                        "Use null for unclear fields."
+                        "Return JSON: {\"amount\": \"0.01\", \"service_id\": \"uuid\", "
+                        "\"description\": \"string\"}. "
+                        "Known services: companyResearcher (b07adb24-85fc-4b4d-92ae-54571a7bdfbf, $0.01), "
+                        "aiSlopCleaner (2236ee9f-339f-4d77-a22e-b3df3df2f34a, $0.03). "
+                        "Default service: b07adb24-85fc-4b4d-92ae-54571a7bdfbf"
+                        + memory_ctx
                     )},
                     {"role": "user", "content": message},
                 ],
@@ -1722,38 +2000,56 @@ def _do_skyfire_payment(message: str, user: User, db: Session, room_id: str = No
             total_tokens += ci3["tokens"]
             total_cost += ci3["cost"]
             pay_intent = _safe_json(parse_resp.choices[0].message.content)
+            amount = str(pay_intent.get("amount", "0.01"))
+            service_id = pay_intent.get("service_id", SKYFIRE_RESEARCH_SERVICE_ID)
             pay_resp = requests.post(
                 f"{SKYFIRE_BASE_URL}/api/v1/tokens", headers=sf_headers,
                 json={
                     "type": "pay",
-                    "tokenAmount": str(pay_intent.get("amount", "1.00")),
-                    "sellerDomainOrUrl": pay_intent.get("recipient", "https://example.com"),
+                    "tokenAmount": amount,
+                    "sellerServiceId": service_id,
+                    "expiresAt": int(_time.time()) + 300,
                 },
                 timeout=15,
             )
             if pay_resp.ok:
-                return _cost_result(f"**Payment Token Created**\n\n{json.dumps(pay_resp.json(), indent=2, default=str)}", total_tokens, total_cost)
+                return _cost_result(
+                    f"**Payment Sent via Skyfire**\n\n"
+                    f"Amount: **{amount} USD**\n"
+                    f"Service: `{service_id[:20]}...`\n"
+                    f"Description: {pay_intent.get('description', 'N/A')}\n\n"
+                    f"```json\n{json.dumps(pay_resp.json(), indent=2, default=str)}\n```",
+                    total_tokens, total_cost,
+                )
             return _cost_result(
                 f"**Payment Intent**\n\n"
-                f"Amount: **{pay_intent.get('amount', 'N/A')} {pay_intent.get('currency', 'USD')}**\n"
-                f"Recipient: {pay_intent.get('recipient', 'N/A')}\n"
+                f"Amount: **{amount} USD**\n"
+                f"Service: `{service_id[:20]}...`\n"
                 f"Description: {pay_intent.get('description', 'N/A')}\n\n"
-                f"_Payment processed through Skyfire's token protocol. "
-                f"Full transaction requires wallet funding at [skyfire.xyz](https://skyfire.xyz)._",
+                f"Status: {pay_resp.status_code}\n\n"
+                f"_Full payments require a funded Skyfire wallet at [skyfire.xyz](https://skyfire.xyz)._",
                 total_tokens, total_cost,
             )
 
         else:
-            health_resp = requests.get(f"{SKYFIRE_BASE_URL}/v1/health", headers=sf_headers, timeout=5)
-            status = "Connected" if health_resp.ok and health_resp.json().get("ok") else "Unavailable"
+            # INFO: check wallet and show capabilities
+            balance_resp = requests.get(
+                f"{SKYFIRE_BASE_URL}/api/v1/agents/balance", headers=sf_headers, timeout=5,
+            )
+            bal_str = "Unavailable"
+            if balance_resp.ok:
+                bal = balance_resp.json()
+                bal_data = bal.get("data", bal)
+                bal_str = f"{bal_data.get('balance', bal_data.get('availableBalance', 'N/A'))} USD"
             return _cost_result(
-                f"**Skyfire** -- AI-Native Payment Protocol\n\nStatus: **{status}**\n\n"
-                f"Skyfire enables:\n"
-                f"- **Pay-per-query AI**: Route LLM calls through Skyfire's proxy\n"
-                f"- **Payment tokens**: Programmable payment sessions (`kya`, `pay`, `kya+pay`)\n"
-                f"- **Agent payments**: AI agents transact autonomously within set limits\n"
-                f"- **Escrow & settlement**: USDC-based micro-payments\n\n"
-                f"Try: \"Check my Skyfire balance\", \"Ask Skyfire AI: ...\", \"Create a payment token\"",
+                f"**Skyfire** -- AI-Native Payment Protocol\n\n"
+                f"Wallet Balance: **{bal_str}**\n\n"
+                f"Skyfire enables autonomous agent commerce:\n"
+                f"- **Company Research** (`@research`): Get structured company info from email/domain ($0.01)\n"
+                f"- **AI Text Cleaner** (`@clean`): Refine AI-generated text to sound natural ($0.03)\n"
+                f"- **Payment tokens**: Three types -- `kya` (identity), `pay` (payment), `kya+pay` (both)\n"
+                f"- **Agent wallets**: USDC-based balance with real-time settlement\n\n"
+                f"Try: `@pay check balance`, `@research google.com`, `@clean <paste AI text>`",
                 total_tokens, total_cost,
             )
 
@@ -1837,7 +2133,7 @@ def chat(body: ChatBody, user: User = Depends(get_current_user), db: Session = D
         role="user", content=body.message, created_at=now,
     ))
     db.commit()
-    handlers = {"chat": _do_chat, "crew": _do_crew, "action": _do_composio_action, "data": _do_snowflake_query, "pay": _do_skyfire_payment}
+    handlers = {"chat": _do_chat, "crew": _do_crew, "action": _do_composio_action, "data": _do_snowflake_query, "pay": _do_skyfire_payment, "research": _do_skyfire_research, "clean": _do_skyfire_clean}
     handler = handlers.get(body.mode, _do_chat)
     try:
         result = handler(body.message, user, db, None)

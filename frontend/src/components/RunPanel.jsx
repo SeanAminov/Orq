@@ -32,9 +32,11 @@ const STEP_TYPES = [
   { value: "action", label: "Action (Composio)" },
   { value: "crew", label: "Crew (CrewAI)" },
   { value: "data", label: "Data (Snowflake)" },
+  { value: "research", label: "Research (Skyfire)" },
+  { value: "clean", label: "Clean Text (Skyfire)" },
 ];
 
-export default function RunPanel() {
+export default function RunPanel({ onWorkflowChange }) {
   const [runType, setRunType] = useState(null);
   const [formData, setFormData] = useState({});
   const [loading, setLoading] = useState(false);
@@ -124,6 +126,7 @@ export default function RunPanel() {
       setWfSteps([{ type: "chat", prompt: "" }]);
       setShowCreateWorkflow(false);
       fetchWorkflows();
+      onWorkflowChange?.();
     } catch (e) {
       setWfError(e.message);
     } finally {
@@ -134,6 +137,7 @@ export default function RunPanel() {
   const handleDeleteWorkflow = async (id) => {
     await fetch(`/api/workflows/${id}`, { method: "DELETE", credentials: "include" });
     fetchWorkflows();
+    onWorkflowChange?.();
   };
 
   const addStep = () => setWfSteps((prev) => [...prev, { type: "chat", prompt: "" }]);

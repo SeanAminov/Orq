@@ -109,7 +109,7 @@ export default function Dashboard() {
     if (!activeRoom || loading) return;
 
     // strip built-in @mentions from the text sent to backend (but preserve custom workflow triggers)
-    const cleanText = text.replace(/@(orq|crew|action|data|pay|summary)\s*/gi, "").trim();
+    const cleanText = text.replace(/@(orq|crew|action|data|pay|summary|research|clean)\s*/gi, "").trim();
     if (!cleanText) return;
 
     // optimistic add user message
@@ -256,6 +256,7 @@ export default function Dashboard() {
         onDeleteMemory={handleDeleteMemory}
         onClearChat={handleClearChat}
         onClearActivity={handleClearActivity}
+        onWorkflowChange={fetchWorkflowTriggers}
       />
 
       <CreateRoomModal

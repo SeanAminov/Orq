@@ -3,12 +3,14 @@ import { motion } from "framer-motion";
 import ChatBubble from "./ChatBubble";
 
 const MENTION_OPTIONS = [
-  { trigger: "@orq",     label: "@orq",     desc: "AI auto-detects intent",        hint: null },
-  { trigger: "@crew",    label: "@crew",    desc: "Multi-agent task (CrewAI)",      hint: "crew" },
-  { trigger: "@action",  label: "@action",  desc: "Gmail, Docs, Drive (Composio)", hint: "action" },
-  { trigger: "@data",    label: "@data",    desc: "Cortex NLP (Snowflake)",        hint: "data" },
-  { trigger: "@pay",     label: "@pay",     desc: "Payments (Skyfire)",            hint: "pay" },
-  { trigger: "@summary", label: "@summary", desc: "Summarize text (Cortex)",       hint: "summary" },
+  { trigger: "@orq",      label: "@orq",      desc: "AI auto-detects intent",                hint: null },
+  { trigger: "@crew",     label: "@crew",     desc: "Multi-agent task (CrewAI)",              hint: "crew" },
+  { trigger: "@action",   label: "@action",   desc: "Gmail, Docs, Drive (Composio)",         hint: "action" },
+  { trigger: "@data",     label: "@data",     desc: "Cortex NLP (Snowflake)",                hint: "data" },
+  { trigger: "@pay",      label: "@pay",      desc: "Wallet & payments (Skyfire)",            hint: "pay" },
+  { trigger: "@summary",  label: "@summary",  desc: "Summarize text (Cortex)",               hint: "summary" },
+  { trigger: "@research", label: "@research", desc: "Company info from email/domain (Skyfire)", hint: "research" },
+  { trigger: "@clean",    label: "@clean",    desc: "Refine AI-generated text (Skyfire)",     hint: "clean" },
 ];
 
 function DateSeparator({ date }) {
@@ -63,7 +65,7 @@ export default function ChatPanel({ room, messages, loading, loadingIntent, onSe
     opt.trigger.toLowerCase().startsWith(`@${mentionFilter.toLowerCase()}`)
   );
 
-  const hasAnyMention = allMentionOptions.some((opt) => input.includes(opt.trigger));
+  const hasAnyMention = allMentionOptions.some((opt) => input.includes(opt.trigger)) || /@\w+/.test(input);
 
   const handleInputChange = (e) => {
     const val = e.target.value;
@@ -127,8 +129,11 @@ export default function ChatPanel({ room, messages, loading, loadingIntent, onSe
         break;
       }
     }
-    // Custom workflow triggers: send the full text (with @trigger) to backend
-    // The backend will detect the trigger and run the workflow
+    // Fallback: any @word in the message should be treated as an AI trigger
+    // This catches custom workflow triggers that haven't been loaded into autocomplete yet
+    if (!isAiTrigger && /@\w+/.test(text)) {
+      isAiTrigger = true;
+    }
     onSend(text, isAiTrigger, isAiTrigger && intentHint === "workflow" ? null : intentHint);
   };
 

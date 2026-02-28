@@ -19,9 +19,11 @@ Type \`@\` in any room to invoke an AI capability. Orq detects your intent and r
 - **Multi-agent crews** research, plan, and execute tasks autonomously via CrewAI
 - **OAuth integrations** with Gmail, Google Docs, Google Drive, Google Calendar, and GitHub via Composio
 - **Enterprise NLP** powered by Snowflake Cortex for sentiment, translation, and summarization
-- **AI-native payments** through Skyfire's pay-per-query protocol
+- **AI-native payments** and paid services (company research, AI text cleaning) through Skyfire
 - **GitHub analysis** for candidate research, commit digests, and profile evaluation
-- **Shared memory** across all agents within a workspace for contextual continuity
+- **Learning memory** that remembers contacts, preferences, and facts from your conversations
+- **Custom workflows** for reusable multi-step automations triggered by \`@mentions\`
+- **Shared context** across all agents within a workspace for contextual continuity
 
 ## Supported Triggers
 
@@ -31,8 +33,10 @@ Type \`@\` in any room to invoke an AI capability. Orq detects your intent and r
 | \`@crew\` | CrewAI | Multi-agent pipelines, candidate research, commit digests |
 | \`@action\` | Composio | Gmail, Docs, Drive, Calendar, GitHub |
 | \`@data\` | Snowflake Cortex | Sentiment analysis, translation, summarization |
-| \`@pay\` | Skyfire | Wallet balance, payment tokens, LLM proxy |
+| \`@pay\` | Skyfire | Wallet balance, payment tokens |
 | \`@summary\` | Cortex | Shortcut for text summarization |
+| \`@research\` | Skyfire + BuildShip | Company info from email or domain ($0.01) |
+| \`@clean\` | Skyfire + BuildShip | Refine AI-generated text ($0.03) |
 `,
   },
   {
@@ -43,131 +47,119 @@ Type \`@\` in any room to invoke an AI capability. Orq detects your intent and r
 
 ## @orq — General AI Assistant
 
-Auto-routes to the best handler based on intent detection. Use this when you're unsure which trigger to use.
+Auto-routes to the best handler based on intent detection. Use this when you're unsure which trigger to use. Orq analyzes your message and picks the right tool automatically.
 
-| Example | What Happens |
-|---------|-------------|
-| \`@orq what is agentic AI?\` | General chat response |
-| \`@orq what did Yug push to the repo?\` | Routes to GitHub fast-path |
-| \`@orq research candidate SeanAminov\` | Routes to candidate research crew |
-| \`@orq send an email to team@co.com\` | Routes to Composio action |
+- \`@orq what is agentic AI?\` — general chat response
+- \`@orq what did Yug push to the repo?\` — routes to GitHub fast-path
+- \`@orq research candidate SeanAminov\` — routes to candidate research crew
+- \`@orq send an email to team@co.com\` — routes to Composio action
 
-**Best for:** Quick questions, brainstorming, when you want Orq to figure out the right tool automatically.
+**Best for:** Quick questions, brainstorming, when you want Orq to figure out the right tool.
+
+---
 
 ## @crew — Multi-Agent Pipelines (CrewAI)
 
-Runs specialized multi-agent crews for complex tasks.
+Runs specialized multi-agent crews for complex tasks. Response time is 15-90 seconds depending on complexity.
 
-### Candidate Research
-Analyzes a GitHub profile against a target role. Runs a 5-agent pipeline: Planner, GitHub Agent, Analysis Agent, Role Mapping Agent, Summary Agent.
+**Candidate Research** — 5-agent pipeline (Planner, GitHub Agent, Analysis, Role Mapping, Summary):
+- \`@crew research candidate torvalds for Backend Engineer\`
+- \`@crew check github.com/SeanAminov for Software Engineer\`
+- \`@crew evaluate SeanAminov's github for Full Stack Developer\`
 
-| Example | Description |
-|---------|-------------|
-| \`@crew research candidate torvalds for Backend Engineer\` | Full candidate research brief |
-| \`@crew check github.com/SeanAminov for Software Engineer\` | GitHub URL-based research |
-| \`@crew evaluate SeanAminov's github for Full Stack Developer\` | Profile evaluation |
+Output includes technical signals, project highlights, role alignment, interview questions, and hiring signal.
 
-**Output includes:** Technical signals, project highlights, role alignment, suggested interview questions, hiring signal assessment.
+**Commit Digest** — 3-agent pipeline that summarizes recent commits:
+- \`@crew commit digest for SeanAminov/Orq\` — last 7 days
+- \`@crew commit digest for SeanAminov/Orq last 14 days\` — custom timeframe
 
-### Commit Digest
-Summarizes recent commits into a feature-grouped digest using a 3-agent crew.
+**GitHub Queries** — direct questions that don't need a full crew:
+- \`@crew what did Yug-More push recently?\`
+- \`@crew show me SeanAminov's repos\`
+- \`@crew what changed in the frontend this week?\`
 
-| Example | Description |
-|---------|-------------|
-| \`@crew commit digest for SeanAminov/Orq\` | Last 7 days of commits |
-| \`@crew commit digest for SeanAminov/Orq last 14 days\` | Custom timeframe |
+**General Tasks** — 3-agent crew (Researcher, Planner, Executor) for anything else:
+- \`@crew plan a migration from Express to FastAPI\`
+- \`@crew analyze the pros and cons of microservices\`
 
-### GitHub Queries
-Direct GitHub questions that don't need a full crew pipeline.
-
-| Example | Description |
-|---------|-------------|
-| \`@crew what did Yug-More push recently?\` | Recent commits by a user |
-| \`@crew show me SeanAminov's repos\` | List user's public repos |
-| \`@crew what changed in the frontend this week?\` | Path-filtered commits |
-
-**Best for:** Candidate evaluation, code audits, team contribution tracking, GitHub profile analysis.
-
-### General Crew Tasks
-Falls back to a 3-agent crew (Researcher, Planner, Executor) for any complex multi-step task.
-
-| Example | Description |
-|---------|-------------|
-| \`@crew plan a migration from Express to FastAPI\` | Research and planning |
-| \`@crew analyze the pros and cons of microservices\` | Deep analysis |
+---
 
 ## @action — App Integrations (Composio)
 
-Executes real actions through OAuth-connected apps: Gmail, Google Docs, Google Drive, and GitHub.
+Executes real actions through OAuth-connected apps. All actions execute immediately.
 
-### Email (Gmail)
+**Email (Gmail)**
+- \`@action send email to alice@company.com about the project update\`
+- \`@action draft email to bob@company.com\` — creates a draft without sending
+- \`@action check my emails\` — fetches recent inbox
+- \`@action email room members a summary of today's conversation\`
 
-| Example | Description |
-|---------|-------------|
-| \`@action send email to alice@company.com about the project update\` | Sends an email |
-| \`@action draft email to bob@company.com\` | Creates a draft (does not send) |
-| \`@action check my emails\` | Fetches recent inbox messages |
-| \`@action email room members a summary of today's conversation\` | Emails all room members with conversation context |
+**Documents (Google Docs)**
+- \`@action create a doc titled "Meeting Notes Q1"\`
+- \`@action create a document with the conversation transcript\`
 
-### Documents (Google Docs)
+**Files (Google Drive)**
+- \`@action list my drive files\`
 
-| Example | Description |
-|---------|-------------|
-| \`@action create a doc titled "Meeting Notes Q1"\` | Creates a new Google Doc |
-| \`@action create a document with the conversation transcript\` | Creates doc with chat content |
+**GitHub**
+- \`@action commit a README to SeanAminov/Orq\`
+- \`@action update the README in SeanAminov/Orq with project description\`
+- \`@action list repos for SeanAminov\`
+- \`@action show recent commits on SeanAminov/Orq\`
 
-### Files (Google Drive)
+**Calendar (Google Calendar)**
+- \`@action schedule an interview with John for Friday at 2pm\`
+- \`@action create a meeting for code review tomorrow at 10am\`
+- \`@action book a call with the team next Monday at 3pm\`
+- \`@action check my calendar for this week\`
 
-| Example | Description |
-|---------|-------------|
-| \`@action list my drive files\` | Lists recent Google Drive files |
+Calendar invites are also offered as follow-up buttons after candidate research and commit digests.
 
-### GitHub (Composio)
-
-| Example | Description |
-|---------|-------------|
-| \`@action commit a README to SeanAminov/Orq\` | Commits a file to GitHub |
-| \`@action update the README in SeanAminov/Orq with project description\` | Updates an existing file |
-| \`@action list repos for SeanAminov\` | Lists user's repositories |
-| \`@action show recent commits on SeanAminov/Orq\` | Lists recent commits |
-
-### Calendar (Google Calendar)
-
-| Example | Description |
-|---------|-------------|
-| \`@action schedule an interview with John for Friday at 2pm\` | Creates a calendar event |
-| \`@action create a meeting for code review tomorrow at 10am\` | Creates a review meeting |
-| \`@action book a call with the team next Monday at 3pm\` | Team meeting invite |
-| \`@action check my calendar for this week\` | Finds upcoming events |
-
-Calendar invites are also offered as follow-up buttons after candidate research, commit digests, and meeting summaries.
-
-**Best for:** Sending emails, creating documents, managing files, committing to GitHub, scheduling meetings. All actions execute immediately.
+---
 
 ## @data — Snowflake Cortex (NLP)
 
-Enterprise NLP functions running on Snowflake infrastructure.
+Enterprise NLP functions running on Snowflake infrastructure. Response time is 2-4 seconds.
 
-| Example | Description |
-|---------|-------------|
-| \`@data analyze sentiment: I love this product!\` | Sentiment score from -1.0 to +1.0 |
-| \`@data translate "hello world" to Spanish\` | Supports en, es, fr, de, ja, ko, zh, pt, it, ru |
-| \`@data summarize [paste long text here]\` | Key point extraction |
-| \`@summary [text]\` | Shortcut for summarization |
+- \`@data analyze sentiment: I love this product but the shipping was terrible\` — returns score from -1.0 to +1.0
+- \`@data translate "hello world" to Spanish\` — supports en, es, fr, de, ja, ko, zh, pt, it, ru
+- \`@data summarize [paste long text here]\` — key point extraction
+- \`@summary [text]\` — shortcut for summarization via Cortex
+- \`@data what were our top 5 products?\` — generates and runs SQL against Snowflake
 
-**Best for:** Text analysis, multi-language translation, document summarization.
+---
 
 ## @pay — Skyfire Payments
 
-AI-native payment protocol for autonomous agent transactions.
+AI-native payment protocol for autonomous agent commerce. Skyfire gives agents their own wallets to transact autonomously.
 
-| Example | Description |
-|---------|-------------|
-| \`@pay check balance\` | Wallet status and active tokens |
-| \`@pay ask what is quantum computing?\` | Pay-per-query LLM via Skyfire proxy |
-| \`@pay create token\` | Generate a programmable payment token |
+- \`@pay check balance\` — shows your Skyfire wallet balance (USDC)
+- \`@pay create a payment token\` — generates a programmable token (kya, pay, or kya+pay)
+- \`@pay info\` — explains Skyfire capabilities and shows wallet status
 
-**Best for:** Checking wallet status, using pay-per-query AI, creating payment sessions.
+Token types: \`kya\` (identity verification), \`pay\` (payment only), \`kya+pay\` (both). Tokens expire after 5 minutes by default.
+
+---
+
+## @research — Company Research (Skyfire + BuildShip)
+
+Get structured company information from an email address or domain. Powered by BuildShip's companyResearcher service, paid via Skyfire ($0.01 per lookup).
+
+- \`@research google.com\` — returns company name, industry, size, location, description
+- \`@research john@acme.com\` — extracts domain from email, researches the company
+- \`@research stripe\` — researches stripe.com
+
+Returns: company name, website, description, industry, location, size, and contact info.
+
+---
+
+## @clean — AI Text Cleaner (Skyfire + BuildShip)
+
+Refine AI-generated text to sound more natural and human-like. Powered by BuildShip's aiSlopCleaner service, paid via Skyfire ($0.03 per use).
+
+- \`@clean <paste AI-generated text>\` — rewrites the text to be clear, engaging, and publish-ready
+
+Paste any AI-generated transcript, draft, or messy text after the trigger. The service analyzes and rewrites it to remove "AI slop" and produce clean output.
 `,
   },
   {
@@ -273,16 +265,106 @@ Functions running on Snowflake infrastructure:
 
 Response time: 2–4 seconds.
 
-## Skyfire — AI-Native Payments
+## Skyfire — AI-Native Payments & Services
 
-Payment protocol for autonomous agent transactions:
+Payment protocol for autonomous agent transactions with access to paid seller services:
 
 - **Wallet**: USDC-based balance and transaction tracking
-- **LLM Proxy**: Pay-per-query routing through OpenRouter
+- **Company Research** (\`@research\`): BuildShip companyResearcher — structured company info from email/domain ($0.01/use)
+- **AI Text Cleaner** (\`@clean\`): BuildShip aiSlopCleaner — refines AI-generated text to sound natural ($0.03/use)
 - **Payment Tokens**: Programmable sessions (kya, pay, kya+pay)
-- **Escrow**: Micro-payment settlement between agents
+
+Flow: Create Skyfire pay token → Pass token to seller service via \`skyfire_kya_pay_token\` header → Seller charges token and returns results.
 
 Requires a funded Skyfire wallet for full functionality.
+`,
+  },
+  {
+    id: "memory-workflows",
+    title: "Memory & Workflows",
+    content: `
+# Learning Memory
+
+Orq automatically learns and remembers facts from your conversations — contacts, preferences, project details, and more. Stored memories are injected into every AI handler so Orq can fill in details without asking.
+
+## How It Works
+
+1. Every message you send is analyzed for teachable facts
+2. Extracted facts are stored as structured memories (subject, key, value)
+3. All AI handlers receive your memory context automatically
+4. If critical info is missing, Orq asks instead of guessing
+
+## Teaching Orq
+
+| What You Say | What Orq Remembers |
+|--------------|-------------------|
+| \`Yug's email is yugmore20@gmail.com\` | Yug's email: yugmore20@gmail.com |
+| \`My timezone is PST\` | Your timezone: PST |
+| \`The project deadline is March 15\` | Project deadline: March 15 |
+| \`Sean's GitHub is SeanAminov\` | Sean's github: SeanAminov |
+
+## Using Memories
+
+Once Orq knows a fact, it uses it automatically:
+
+- \`@action send email to Yug about the update\` — uses stored email address
+- \`@crew research Sean's GitHub for Full Stack Developer\` — uses stored GitHub username
+- \`@action schedule a meeting at my usual time\` — uses stored timezone preference
+
+If Orq doesn't have the info it needs, it will ask you directly.
+
+## Managing Memories
+
+View and delete memories in the **Activity** tab on the right panel. Click the x button to make Orq forget a specific fact.
+
+---
+
+# Custom Workflows
+
+Create reusable multi-step automations triggered by custom \`@mentions\`. Each workflow chains multiple steps together, passing results from one step to the next.
+
+## Creating a Workflow
+
+1. Go to the **Workflows** tab in the right panel
+2. Click **+ Create Workflow**
+3. Fill in:
+   - **Name**: A descriptive name (e.g., "Summary Send")
+   - **Trigger**: The \`@mention\` keyword (e.g., SummarySend becomes \`@SummarySend\`)
+   - **Description**: What the workflow does
+   - **Steps**: One or more steps, each with a type and prompt
+
+## Step Types
+
+| Type | Routes To | Use For |
+|------|-----------|---------|
+| **Chat** | General AI | Summarizing, analyzing, writing |
+| **Action** | Composio (Gmail, Docs, Drive, Calendar) | Sending emails, creating docs |
+| **Crew** | CrewAI multi-agent pipeline | Complex research, analysis |
+| **Data** | Snowflake Cortex NLP | Sentiment, translation, SQL |
+
+## Chaining Steps with prev_result
+
+Use \`{{prev_result}}\` in any step prompt to reference the output from the previous step:
+
+**Example workflow: @SummarySend**
+- Step 1 (Chat): "Summarize the conversation so far in bullet points"
+- Step 2 (Action): "Create a Google Doc titled Meeting Summary with: {{prev_result}}"
+
+**Example workflow: @AnalyzeAndEmail**
+- Step 1 (Data): "Analyze sentiment of the last 5 messages"
+- Step 2 (Chat): "Write a brief report based on: {{prev_result}}"
+- Step 3 (Action): "Email the report to the team: {{prev_result}}"
+
+## Using Workflows in Chat
+
+Type \`@\` in the chat to see your custom workflows in the autocomplete dropdown alongside built-in triggers:
+
+- \`@SummarySend\` — runs with no extra input
+- \`@SummarySend focus on action items\` — passes extra context to the first step
+
+## Managing Workflows
+
+View, create, and delete workflows in the **Workflows** tab. Each workflow card shows its trigger, name, step count, and a delete button.
 `,
   },
   {
@@ -312,13 +394,26 @@ Rooms are isolated workspaces with member-scoped visibility. Each room maintains
 ## Intent Routing
 
 1. User sends a message with an \`@\` trigger
-2. If trigger matches a known hint (crew, action, data, pay), route directly
-3. If \`@orq\`, classify intent via keyword fast-path or OpenAI fallback
-4. Execute the appropriate handler
-5. Track tokens, cost, and status on the AgentRun record
-6. Store the assistant response in the room
+2. Extract memories from the message (contacts, preferences, facts)
+3. Check for custom workflow triggers — if matched, execute the workflow pipeline
+4. If trigger matches a known hint (crew, action, data, pay), route directly
+5. If \`@orq\`, classify intent via keyword fast-path or OpenAI fallback
+6. Execute the appropriate handler with user memory context injected
+7. Track tokens, cost, and status on the AgentRun record
+8. Store the assistant response in the room
 
-## Shared Memory
+## Learning Memory
+
+Every message is analyzed for teachable facts (contacts, preferences, project details). Extracted memories are stored per-user and injected into all AI handler system prompts. This enables:
+- \`@action send email to Yug\` — automatically uses stored email
+- \`@crew research Sean's GitHub\` — uses stored GitHub username
+- Missing info triggers a follow-up question instead of guessing
+
+## Custom Workflows
+
+Users create reusable multi-step automations with custom \`@triggers\`. Each step calls an existing handler (chat, action, crew, data) and passes its output to the next step via \`{{prev_result}}\`. Workflow triggers are checked before intent classification.
+
+## Shared Context
 
 All agent runs are stored with structured summaries. Every handler receives context from prior runs in the same room. This enables cross-agent awareness:
 - \`@orq\` knows what \`@crew\` discovered
@@ -360,12 +455,28 @@ Messages are polled every 3 seconds, enabling smooth multi-user conversations. A
 | POST | \`/api/rooms/:id/run\` | Trigger AI agent with intent routing |
 | GET | \`/api/rooms/:id/runs\` | Get agent run history for room |
 
-## Workflows
+## Pipelines
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | \`/api/runs/candidate-research\` | Run 5-agent candidate research pipeline |
 | POST | \`/api/runs/commit-digest\` | Run 3-agent commit digest pipeline |
+
+## Memories
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | \`/api/memories\` | List current user's stored memories |
+| DELETE | \`/api/memories/:id\` | Delete (forget) a specific memory |
+
+## Workflows
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | \`/api/workflows\` | Create a custom workflow |
+| GET | \`/api/workflows\` | List user's workflows and room-shared workflows |
+| DELETE | \`/api/workflows/:id\` | Delete a workflow (owner only) |
+| GET | \`/api/workflows/triggers\` | List active workflow triggers for autocomplete |
 
 ## System
 

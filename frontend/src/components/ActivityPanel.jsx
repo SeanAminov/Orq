@@ -3,11 +3,13 @@ import RunPanel from "./RunPanel";
 import DocsPanel from "./DocsPanel";
 
 const INTENT_COLORS = {
-  crew:   { bg: "rgba(139, 92, 246, 0.12)", color: "#8b5cf6", label: "Crew" },
-  action: { bg: "rgba(34, 197, 94, 0.12)",  color: "#22c55e", label: "Action" },
-  data:   { bg: "rgba(59, 130, 246, 0.12)", color: "#3b82f6", label: "Data" },
-  pay:    { bg: "rgba(245, 158, 11, 0.12)", color: "#f59e0b", label: "Pay" },
-  chat:   { bg: "rgba(161, 161, 170, 0.12)", color: "#a1a1aa", label: "Chat" },
+  crew:     { bg: "rgba(139, 92, 246, 0.12)", color: "#8b5cf6", label: "Crew" },
+  action:   { bg: "rgba(34, 197, 94, 0.12)",  color: "#22c55e", label: "Action" },
+  data:     { bg: "rgba(59, 130, 246, 0.12)", color: "#3b82f6", label: "Data" },
+  pay:      { bg: "rgba(245, 158, 11, 0.12)", color: "#f59e0b", label: "Pay" },
+  research: { bg: "rgba(236, 72, 153, 0.12)", color: "#ec4899", label: "Research" },
+  clean:    { bg: "rgba(20, 184, 166, 0.12)", color: "#14b8a6", label: "Clean" },
+  chat:     { bg: "rgba(161, 161, 170, 0.12)", color: "#a1a1aa", label: "Chat" },
 };
 
 function IntentBadge({ intent }) {
@@ -24,7 +26,7 @@ function StatusDot({ status }) {
   return <span className="ap-status-dot" style={{ background: color }} />;
 }
 
-export default function ActivityPanel({ runs, tools, room, memories, onDeleteMemory, onClearChat, onClearActivity }) {
+export default function ActivityPanel({ runs, tools, room, memories, onDeleteMemory, onClearChat, onClearActivity, onWorkflowChange }) {
   const [tab, setTab] = useState("activity");
 
   return (
@@ -127,7 +129,7 @@ export default function ActivityPanel({ runs, tools, room, memories, onDeleteMem
         )}
 
         <div className="ap-workflows" style={{ display: tab === "workflows" ? "block" : "none" }}>
-          <RunPanel />
+          <RunPanel onWorkflowChange={onWorkflowChange} />
         </div>
 
         <div className="ap-docs" style={{ display: tab === "docs" ? "block" : "none" }}>
