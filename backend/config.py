@@ -71,6 +71,7 @@ def get_composio_tools(tool_slugs: list[str] | None = None):
         "GOOGLEDOCS_CREATE_DOCUMENT", "GOOGLEDRIVE_LIST_FILES",
         "GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS", "GITHUB_GET_A_REPOSITORY",
         "GITHUB_LIST_REPOSITORIES_FOR_A_USER", "GITHUB_LIST_COMMITS",
+        "GOOGLECALENDAR_CREATE_EVENT", "GOOGLECALENDAR_FIND_EVENT",
     ]
     raw = client.tools.get_raw_composio_tools(tools=tool_slugs or default_tools)
     return provider.wrap_tools(raw)

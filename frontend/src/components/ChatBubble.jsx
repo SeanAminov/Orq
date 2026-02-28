@@ -7,19 +7,20 @@ function getFollowUpActions(content, role, runId) {
   const lower = content.toLowerCase();
   const actions = [];
 
-  // Candidate research brief -> offer to create a doc or generate interview questions
+  // Candidate research brief -> offer to create a doc, schedule interview, commit
   if (
     (lower.includes("candidate research") || lower.includes("research brief") ||
      lower.includes("hiring signal") || lower.includes("role alignment")) &&
     lower.includes("interview")
   ) {
     actions.push(
+      { label: "Schedule Interview", command: "@action create a Google Calendar event for a candidate interview based on the research brief above" },
       { label: "Save as Google Doc", command: "@action create a Google Doc with the candidate research brief above" },
       { label: "Commit to GitHub", command: "@action commit the candidate research brief as a markdown file to GitHub" },
     );
   }
 
-  // Commit digest -> offer to email or create doc
+  // Commit digest -> offer to email, create doc, or schedule review
   if (
     lower.includes("commit") &&
     (lower.includes("digest") || lower.includes("summary") || lower.includes("changes"))
@@ -27,10 +28,11 @@ function getFollowUpActions(content, role, runId) {
     actions.push(
       { label: "Email Digest to Team", command: "@action email room members the commit digest above" },
       { label: "Save as Google Doc", command: "@action create a Google Doc with the commit digest above" },
+      { label: "Schedule Review", command: "@action create a Google Calendar event for a code review meeting to discuss the commit digest above" },
     );
   }
 
-  // Conversation or meeting summary -> offer to save or email
+  // Conversation or meeting summary -> offer to save, email, or schedule follow-up
   if (
     (lower.includes("conversation") || lower.includes("meeting") || lower.includes("transcript")) &&
     (lower.includes("summary") || lower.includes("overview"))
@@ -38,6 +40,18 @@ function getFollowUpActions(content, role, runId) {
     actions.push(
       { label: "Save Transcript as Doc", command: "@action create a Google Doc with the conversation transcript above" },
       { label: "Email Summary to Team", command: "@action email room members the conversation summary above" },
+      { label: "Schedule Follow-up", command: "@action create a Google Calendar event for a follow-up meeting based on the conversation above" },
+    );
+  }
+
+  // Any response mentioning scheduling, interview, or calendar -> offer calendar invite
+  if (
+    !actions.some((a) => a.label.startsWith("Schedule")) &&
+    (lower.includes("schedule") || lower.includes("calendar") || lower.includes("book a") ||
+     lower.includes("set up a meeting") || lower.includes("set up an interview"))
+  ) {
+    actions.push(
+      { label: "Send Calendar Invite", command: "@action create a Google Calendar event based on the details discussed above" },
     );
   }
 

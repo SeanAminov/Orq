@@ -17,7 +17,7 @@ Type \`@\` in any room to invoke an AI capability. Orq detects your intent and r
 ## Key Capabilities
 
 - **Multi-agent crews** research, plan, and execute tasks autonomously via CrewAI
-- **OAuth integrations** with Gmail, Google Docs, Google Drive, and GitHub via Composio
+- **OAuth integrations** with Gmail, Google Docs, Google Drive, Google Calendar, and GitHub via Composio
 - **Enterprise NLP** powered by Snowflake Cortex for sentiment, translation, and summarization
 - **AI-native payments** through Skyfire's pay-per-query protocol
 - **GitHub analysis** for candidate research, commit digests, and profile evaluation
@@ -29,7 +29,7 @@ Type \`@\` in any room to invoke an AI capability. Orq detects your intent and r
 |---------|-----------|----------|
 | \`@orq\` | Auto-detect | General requests — Orq picks the right handler |
 | \`@crew\` | CrewAI | Multi-agent pipelines, candidate research, commit digests |
-| \`@action\` | Composio | Gmail, Google Docs, Drive, GitHub commits |
+| \`@action\` | Composio | Gmail, Docs, Drive, Calendar, GitHub |
 | \`@data\` | Snowflake Cortex | Sentiment analysis, translation, summarization |
 | \`@pay\` | Skyfire | Wallet balance, payment tokens, LLM proxy |
 | \`@summary\` | Cortex | Shortcut for text summarization |
@@ -131,7 +131,18 @@ Executes real actions through OAuth-connected apps: Gmail, Google Docs, Google D
 | \`@action list repos for SeanAminov\` | Lists user's repositories |
 | \`@action show recent commits on SeanAminov/Orq\` | Lists recent commits |
 
-**Best for:** Sending emails, creating documents, managing files, committing to GitHub. All actions execute immediately.
+### Calendar (Google Calendar)
+
+| Example | Description |
+|---------|-------------|
+| \`@action schedule an interview with John for Friday at 2pm\` | Creates a calendar event |
+| \`@action create a meeting for code review tomorrow at 10am\` | Creates a review meeting |
+| \`@action book a call with the team next Monday at 3pm\` | Team meeting invite |
+| \`@action check my calendar for this week\` | Finds upcoming events |
+
+Calendar invites are also offered as follow-up buttons after candidate research, commit digests, and meeting summaries.
+
+**Best for:** Sending emails, creating documents, managing files, committing to GitHub, scheduling meetings. All actions execute immediately.
 
 ## @data — Snowflake Cortex (NLP)
 
@@ -242,6 +253,7 @@ Connected apps with real OAuth tokens:
 | **Gmail** | Send email, create draft, fetch inbox |
 | **Google Docs** | Create and write documents |
 | **Google Drive** | List and search files |
+| **Google Calendar** | Create events, find meetings, schedule interviews |
 | **GitHub** | Commit files, list repos, view commits |
 
 Room-scoped context: when you say "email room members," Orq resolves member email addresses and includes conversation context automatically.

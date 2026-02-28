@@ -1117,7 +1117,9 @@ def _do_composio_action(message: str, user: User, db: Session, room_id: str = No
         "- 'commit' / 'push to github' / 'update readme' / 'create file on github' -> use GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS\n"
         "- 'list repos' / 'show repositories' -> use GITHUB_LIST_REPOSITORIES_FOR_A_USER\n"
         "- 'show commits' / 'recent commits' -> use GITHUB_LIST_COMMITS\n"
-        "- 'repo details' / 'about this repo' -> use GITHUB_GET_A_REPOSITORY\n\n"
+        "- 'repo details' / 'about this repo' -> use GITHUB_GET_A_REPOSITORY\n"
+        "- 'schedule meeting' / 'calendar invite' / 'book a call' / 'set up an interview' / 'create event' -> use GOOGLECALENDAR_CREATE_EVENT\n"
+        "- 'check calendar' / 'upcoming events' / 'find meeting' -> use GOOGLECALENDAR_FIND_EVENT\n\n"
         "IMPORTANT: When the user says 'send', ALWAYS use GMAIL_SEND_EMAIL, never GMAIL_CREATE_EMAIL_DRAFT.\n"
         "Only use the draft tool when the user explicitly asks for a draft.\n\n"
         "When the user asks to commit or push a file to GitHub, use GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS.\n"
@@ -1632,7 +1634,7 @@ def get_activity(user: User = Depends(get_current_user), db: Session = Depends(g
 def tools_status(user: User = Depends(get_current_user)):
     return {
         "crewai":    {"active": True, "label": "CrewAI", "description": "Multi-agent orchestration"},
-        "composio":  {"active": get_composio_client() is not None, "label": "Composio", "description": "Gmail, Docs, Drive"},
+        "composio":  {"active": get_composio_client() is not None, "label": "Composio", "description": "Gmail, Docs, Drive, Calendar, GitHub"},
         "snowflake": {"active": get_snowflake_connection() is not None, "label": "Snowflake", "description": "Cortex AI (NLP)"},
         "skyfire":   {"active": SKYFIRE_API_KEY is not None, "label": "Skyfire", "description": "AI payments"},
         "openai":    {"active": get_openai_client() is not None, "label": "OpenAI", "description": f"LLM ({OPENAI_MODEL})"},
