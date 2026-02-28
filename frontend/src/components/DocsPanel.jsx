@@ -27,16 +27,14 @@ Type \`@\` in any room to invoke an AI capability. Orq detects your intent and r
 
 ## Supported Triggers
 
-| Trigger | Routes To | Best For |
-|---------|-----------|----------|
-| \`@orq\` | Auto-detect | General requests — Orq picks the right handler |
-| \`@crew\` | CrewAI | Multi-agent pipelines, candidate research, commit digests |
-| \`@action\` | Composio | Gmail, Docs, Drive, Calendar, GitHub |
-| \`@data\` | Snowflake Cortex | Sentiment analysis, translation, summarization |
-| \`@pay\` | Skyfire | Wallet balance, payment tokens |
-| \`@summary\` | Cortex | Shortcut for text summarization |
-| \`@research\` | Skyfire + BuildShip | Company info from email or domain ($0.01) |
-| \`@clean\` | Skyfire + BuildShip | Refine AI-generated text ($0.03) |
+- \`@orq\` — **Auto-detect** — General requests, Orq picks the right handler
+- \`@crew\` — **CrewAI** — Multi-agent pipelines, candidate research, commit digests
+- \`@action\` — **Composio** — Gmail, Docs, Drive, Calendar, GitHub
+- \`@data\` — **Snowflake Cortex** — Sentiment analysis, translation, summarization
+- \`@pay\` — **Skyfire** — Wallet balance, payment tokens
+- \`@summary\` — **Cortex** — Shortcut for text summarization
+- \`@research\` — **Skyfire + BuildShip** — Company info from email or domain ($0.01)
+- \`@clean\` — **Skyfire + BuildShip** — Refine AI-generated text ($0.03)
 `,
   },
   {
@@ -131,19 +129,31 @@ Enterprise NLP functions running on Snowflake infrastructure. Response time is 2
 
 ## @pay — Skyfire Payments
 
-AI-native payment protocol for autonomous agent commerce. Skyfire gives agents their own wallets to transact autonomously.
+AI-native payment protocol for autonomous agent commerce. Skyfire gives agents their own USDC wallets to transact autonomously with seller services on the Skyfire network.
 
-- \`@pay check balance\` — shows your Skyfire wallet balance (USDC)
-- \`@pay create a payment token\` — generates a programmable token (kya, pay, or kya+pay)
+- \`@pay check balance\` — shows your Skyfire wallet balance (available USDC, held amount, pending charges)
+- \`@pay create a payment token\` — generates a programmable JWT token (kya, pay, or kya+pay)
 - \`@pay info\` — explains Skyfire capabilities and shows wallet status
 
-Token types: \`kya\` (identity verification), \`pay\` (payment only), \`kya+pay\` (both). Tokens expire after 5 minutes by default.
+**Token types:**
+- \`kya\` — Identity verification only (Know Your Agent)
+- \`pay\` — Payment authorization only
+- \`kya+pay\` — Both identity and payment in one token
+
+Tokens are JWT-based, expire after 5 minutes by default, and are scoped to a specific seller service. When Orq calls a paid service (\`@research\` or \`@clean\`), it automatically creates a pay token, passes it to the seller via the \`skyfire_kya_pay_token\` header, and the seller charges the token before returning results.
+
+**Skyfire payment flow:**
+1. Orq creates a pay token via the Skyfire API (\`POST /api/v1/tokens\`)
+2. The token includes the amount, seller service ID, and expiration
+3. Orq sends the request to the seller service with the JWT in the header
+4. The seller verifies and charges the token, then returns the result
+5. The charge is deducted from your Skyfire wallet balance
 
 ---
 
 ## @research — Company Research (Skyfire + BuildShip)
 
-Get structured company information from an email address or domain. Powered by BuildShip's companyResearcher service, paid via Skyfire ($0.01 per lookup).
+Get structured company information from an email address or domain. Powered by BuildShip's companyResearcher seller service on the Skyfire network. Each lookup costs $0.01 USDC, charged automatically from your Skyfire wallet.
 
 - \`@research google.com\` — returns company name, industry, size, location, description
 - \`@research john@acme.com\` — extracts domain from email, researches the company
@@ -151,15 +161,19 @@ Get structured company information from an email address or domain. Powered by B
 
 Returns: company name, website, description, industry, location, size, and contact info.
 
+**How it works:** Orq extracts the email or domain from your message, creates a $0.01 Skyfire pay token scoped to the companyResearcher service, then calls the BuildShip endpoint with the token. The service charges the token and returns structured company data.
+
 ---
 
 ## @clean — AI Text Cleaner (Skyfire + BuildShip)
 
-Refine AI-generated text to sound more natural and human-like. Powered by BuildShip's aiSlopCleaner service, paid via Skyfire ($0.03 per use).
+Refine AI-generated text to sound more natural and human-like. Powered by BuildShip's aiSlopCleaner seller service on the Skyfire network. Each use costs $0.03 USDC, charged automatically from your Skyfire wallet.
 
 - \`@clean <paste AI-generated text>\` — rewrites the text to be clear, engaging, and publish-ready
 
-Paste any AI-generated transcript, draft, or messy text after the trigger. The service analyzes and rewrites it to remove "AI slop" and produce clean output.
+Paste any AI-generated transcript, draft, or messy text after the trigger. The service analyzes and rewrites it to remove filler phrases, repetition, and robotic tone, producing clean, human-like, publish-ready text.
+
+**How it works:** Orq creates a $0.03 Skyfire pay token scoped to the aiSlopCleaner service, then sends your text as a \`transcript\` field to the BuildShip endpoint. The service charges the token and returns the refined text.
 `,
   },
   {
@@ -178,28 +192,22 @@ Any \`@orq\` or \`@crew\` message that mentions GitHub, repos, commits, or a use
 
 When creating a room, you can link a GitHub repository (e.g., \`SeanAminov/Orq\`). This enables context-aware queries:
 
-| Example | What Happens |
-|---------|-------------|
-| \`@orq what did Yug push?\` | Queries linked repo for Yug's recent commits |
-| \`@orq what changed in the frontend?\` | Path-filtered commits in the linked repo |
-| \`@crew show me recent activity\` | Overview of recent commits |
+- \`@orq what did Yug push?\` — Queries linked repo for Yug's recent commits
+- \`@orq what changed in the frontend?\` — Path-filtered commits in the linked repo
+- \`@crew show me recent activity\` — Overview of recent commits
 
 ### Profile Analysis
 
 Orq can analyze any public GitHub profile:
 
-| Example | What Happens |
-|---------|-------------|
-| \`@crew show me SeanAminov's repos\` | Lists repos with languages and details |
-| \`@crew analyze github.com/torvalds\` | Full profile overview |
+- \`@crew show me SeanAminov's repos\` — Lists repos with languages and details
+- \`@crew analyze github.com/torvalds\` — Full profile overview
 
 ### Candidate Research
 
 A 5-agent pipeline evaluates a developer's GitHub for role fit:
 
-| Example | Output |
-|---------|--------|
-| \`@crew research candidate SeanAminov for Full Stack Developer\` | Structured research brief |
+- \`@crew research candidate SeanAminov for Full Stack Developer\` — Returns a structured research brief
 
 **Brief includes:** Overview, strongest technical signals (with repo evidence), projects of note, role alignment (strengths/gaps), suggested interview questions, and hiring signal assessment.
 
@@ -207,10 +215,8 @@ A 5-agent pipeline evaluates a developer's GitHub for role fit:
 
 Use \`@action\` to commit files or update content on GitHub through the connected Composio OAuth:
 
-| Example | Description |
-|---------|-------------|
-| \`@action commit a README.md to SeanAminov/Orq with project overview\` | Creates or updates a file |
-| \`@action push interview notes to SeanAminov/Orq as notes/interview.md\` | Creates a new file in a subdirectory |
+- \`@action commit a README.md to SeanAminov/Orq with project overview\` — Creates or updates a file
+- \`@action push interview notes to SeanAminov/Orq as notes/interview.md\` — Creates a new file in a subdirectory
 
 ## GitHub Rate Limits
 
@@ -234,49 +240,58 @@ Runs multi-agent crews for complex tasks.
 **Candidate Research Crew** (5 agents): Planner, GitHub Agent, Analysis Agent, Role Mapping Agent, Summary Agent
 **Commit Digest Crew** (3 agents): Collector, Analyzer, Writer
 
-Response time: 15–90 seconds depending on complexity.
+Response time: 15-90 seconds depending on complexity.
 
 ## Composio — OAuth App Integrations
 
 Connected apps with real OAuth tokens:
 
-| App | Capabilities |
-|-----|-------------|
-| **Gmail** | Send email, create draft, fetch inbox |
-| **Google Docs** | Create and write documents |
-| **Google Drive** | List and search files |
-| **Google Calendar** | Create events, find meetings, schedule interviews |
-| **GitHub** | Commit files, list repos, view commits |
+- **Gmail** — Send email, create draft, fetch inbox
+- **Google Docs** — Create and write documents
+- **Google Drive** — List and search files
+- **Google Calendar** — Create events, find meetings, schedule interviews
+- **GitHub** — Commit files, list repos, view commits
 
 Room-scoped context: when you say "email room members," Orq resolves member email addresses and includes conversation context automatically.
 
-Response time: 3–8 seconds.
+Response time: 3-8 seconds.
 
 ## Snowflake Cortex — Enterprise NLP
 
 Functions running on Snowflake infrastructure:
 
-| Function | Input | Output |
-|----------|-------|--------|
-| **Sentiment** | Any text | Score from -1.0 to +1.0 |
-| **Translate** | Text + target language | Translated text (10 languages) |
-| **Summarize** | Long text | Condensed key points |
-| **SQL** | Natural language query | Query results from Snowflake |
+- **Sentiment** — Input: any text, Output: score from -1.0 to +1.0
+- **Translate** — Input: text + target language, Output: translated text (10 languages)
+- **Summarize** — Input: long text, Output: condensed key points
+- **SQL** — Input: natural language query, Output: query results from Snowflake
 
-Response time: 2–4 seconds.
+Response time: 2-4 seconds.
 
 ## Skyfire — AI-Native Payments & Services
 
-Payment protocol for autonomous agent transactions with access to paid seller services:
+Skyfire is an AI-native payment protocol that gives agents their own USDC wallets to transact autonomously with seller services. Orq uses Skyfire to pay for premium services on the Skyfire network without any human intervention in the payment flow.
 
-- **Wallet**: USDC-based balance and transaction tracking
+**Wallet:**
+- USDC-based balance with real-time tracking
+- View available balance, held amounts, and pending charges via \`@pay check balance\`
+- All service charges are deducted automatically
+
+**Seller Services (BuildShip):**
 - **Company Research** (\`@research\`): BuildShip companyResearcher — structured company info from email/domain ($0.01/use)
 - **AI Text Cleaner** (\`@clean\`): BuildShip aiSlopCleaner — refines AI-generated text to sound natural ($0.03/use)
-- **Payment Tokens**: Programmable sessions (kya, pay, kya+pay)
 
-Flow: Create Skyfire pay token → Pass token to seller service via \`skyfire_kya_pay_token\` header → Seller charges token and returns results.
+**Payment Tokens:**
+- \`kya\` — Know Your Agent (identity verification only)
+- \`pay\` — Payment authorization only
+- \`kya+pay\` — Combined identity and payment
 
-Requires a funded Skyfire wallet for full functionality.
+**Payment Flow:**
+1. Orq creates a JWT pay token via Skyfire API (\`POST /api/v1/tokens\`) with the amount, seller service ID, and 5-minute expiration
+2. Orq calls the BuildShip seller endpoint with the JWT in the \`skyfire_kya_pay_token\` header
+3. The seller service verifies the token, charges it, and returns the result
+4. The charge is settled from the Skyfire wallet balance in USDC
+
+Response time: 3-6 seconds (includes token creation + service call).
 `,
   },
   {
@@ -296,12 +311,10 @@ Orq automatically learns and remembers facts from your conversations — contact
 
 ## Teaching Orq
 
-| What You Say | What Orq Remembers |
-|--------------|-------------------|
-| \`Yug's email is yugmore20@gmail.com\` | Yug's email: yugmore20@gmail.com |
-| \`My timezone is PST\` | Your timezone: PST |
-| \`The project deadline is March 15\` | Project deadline: March 15 |
-| \`Sean's GitHub is SeanAminov\` | Sean's github: SeanAminov |
+- \`Yug's email is yugmore20@gmail.com\` — Orq remembers **Yug's email**: yugmore20@gmail.com
+- \`My timezone is PST\` — Orq remembers **Your timezone**: PST
+- \`The project deadline is March 15\` — Orq remembers **Project deadline**: March 15
+- \`Sean's GitHub is SeanAminov\` — Orq remembers **Sean's github**: SeanAminov
 
 ## Using Memories
 
@@ -335,12 +348,10 @@ Create reusable multi-step automations triggered by custom \`@mentions\`. Each w
 
 ## Step Types
 
-| Type | Routes To | Use For |
-|------|-----------|---------|
-| **Chat** | General AI | Summarizing, analyzing, writing |
-| **Action** | Composio (Gmail, Docs, Drive, Calendar) | Sending emails, creating docs |
-| **Crew** | CrewAI multi-agent pipeline | Complex research, analysis |
-| **Data** | Snowflake Cortex NLP | Sentiment, translation, SQL |
+- **Chat** — Routes to General AI — Use for summarizing, analyzing, writing
+- **Action** — Routes to Composio (Gmail, Docs, Drive, Calendar) — Use for sending emails, creating docs
+- **Crew** — Routes to CrewAI multi-agent pipeline — Use for complex research, analysis
+- **Data** — Routes to Snowflake Cortex NLP — Use for sentiment, translation, SQL
 
 ## Chaining Steps with prev_result
 
@@ -364,7 +375,7 @@ Type \`@\` in the chat to see your custom workflows in the autocomplete dropdown
 
 ## Managing Workflows
 
-View, create, and delete workflows in the **Workflows** tab. Each workflow card shows its trigger, name, step count, and a delete button.
+View, create, edit, and delete workflows in the **Workflows** tab. Each workflow card shows its trigger, name, step count, and edit/delete buttons.
 `,
   },
   {
@@ -375,13 +386,11 @@ View, create, and delete workflows in the **Workflows** tab. Each workflow card 
 
 ## Stack
 
-| Layer | Technology |
-|-------|-----------|
-| **Backend** | FastAPI, SQLAlchemy, SQLite |
-| **Frontend** | React 19, Vite, Framer Motion |
-| **Auth** | JWT cookie-based sessions |
-| **AI** | OpenAI GPT-4.1-mini, CrewAI, Snowflake Cortex |
-| **Integrations** | Composio (OAuth), Skyfire (Payments), GitHub API |
+- **Backend** — FastAPI, SQLAlchemy, SQLite
+- **Frontend** — React 19, Vite, Framer Motion
+- **Auth** — JWT cookie-based sessions
+- **AI** — OpenAI GPT-4.1-mini, CrewAI, Snowflake Cortex
+- **Integrations** — Composio (OAuth), Skyfire (Payments), GitHub API
 
 ## Room Model
 
@@ -420,9 +429,20 @@ All agent runs are stored with structured summaries. Every handler receives cont
 - \`@action\` can reference \`@data\` analysis results
 - Workflows build on prior conversation context
 
+## Skyfire Payment Flow
+
+When a user triggers \`@research\` or \`@clean\`, Orq autonomously handles the full payment cycle:
+1. Authenticate with Skyfire using the API key (\`skyfire-api-key\` header)
+2. Create a scoped pay token (\`POST /api/v1/tokens\`) with amount, seller service UUID, and TTL
+3. Call the BuildShip seller endpoint with the JWT token in the \`skyfire_kya_pay_token\` header
+4. Seller verifies and charges the token, returns results
+5. Orq formats and delivers the response to the user
+
+The \`@pay\` handler also supports balance checks (\`GET /api/v1/agents/balance\`), custom token creation, and wallet status queries.
+
 ## Cost Tracking
 
-Every agent run records token usage (input + output), estimated cost (based on model pricing), and cumulative room budget. Costs are visible in the activity panel and room sidebar.
+Every agent run records token usage (input + output), estimated cost (based on model pricing), and cumulative room budget. Skyfire service charges are tracked separately via the wallet. Costs are visible in the activity panel and room sidebar.
 
 ## Real-Time Chat
 
@@ -437,55 +457,45 @@ Messages are polled every 3 seconds, enabling smooth multi-user conversations. A
 
 ## Authentication
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | \`/api/auth/login\` | Login with email and password |
-| POST | \`/api/auth/signup\` | Create a new account |
-| POST | \`/api/auth/logout\` | Clear session cookie |
-| GET | \`/api/auth/me\` | Get current user info |
+- **POST** \`/api/auth/login\` — Login with email and password
+- **POST** \`/api/auth/signup\` — Create a new account
+- **POST** \`/api/auth/logout\` — Clear session cookie
+- **GET** \`/api/auth/me\` — Get current user info
 
 ## Rooms
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | \`/api/rooms\` | List rooms for current user |
-| POST | \`/api/rooms\` | Create a new room (with optional GitHub repo link) |
-| GET | \`/api/rooms/:id/messages\` | Get room message history |
-| POST | \`/api/rooms/:id/messages\` | Send a plain message |
-| POST | \`/api/rooms/:id/run\` | Trigger AI agent with intent routing |
-| GET | \`/api/rooms/:id/runs\` | Get agent run history for room |
+- **GET** \`/api/rooms\` — List rooms for current user
+- **POST** \`/api/rooms\` — Create a new room (with optional GitHub repo link)
+- **GET** \`/api/rooms/:id/messages\` — Get room message history
+- **POST** \`/api/rooms/:id/messages\` — Send a plain message
+- **POST** \`/api/rooms/:id/run\` — Trigger AI agent with intent routing
+- **GET** \`/api/rooms/:id/runs\` — Get agent run history for room
 
 ## Pipelines
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | \`/api/runs/candidate-research\` | Run 5-agent candidate research pipeline |
-| POST | \`/api/runs/commit-digest\` | Run 3-agent commit digest pipeline |
+- **POST** \`/api/runs/candidate-research\` — Run 5-agent candidate research pipeline
+- **POST** \`/api/runs/commit-digest\` — Run 3-agent commit digest pipeline
 
 ## Memories
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | \`/api/memories\` | List current user's stored memories |
-| DELETE | \`/api/memories/:id\` | Delete (forget) a specific memory |
+- **GET** \`/api/memories\` — List current user's stored memories
+- **DELETE** \`/api/memories/:id\` — Delete (forget) a specific memory
 
 ## Workflows
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | \`/api/workflows\` | Create a custom workflow |
-| GET | \`/api/workflows\` | List user's workflows and room-shared workflows |
-| DELETE | \`/api/workflows/:id\` | Delete a workflow (owner only) |
-| GET | \`/api/workflows/triggers\` | List active workflow triggers for autocomplete |
+- **POST** \`/api/workflows\` — Create a custom workflow
+- **GET** \`/api/workflows\` — List user's workflows and room-shared workflows
+- **PUT** \`/api/workflows/:id\` — Update an existing workflow (owner only)
+- **DELETE** \`/api/workflows/:id\` — Delete a workflow (owner only)
+- **GET** \`/api/workflows/triggers\` — List active workflow triggers for autocomplete
 
 ## System
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | \`/api/tools/status\` | Integration connection status |
-| GET | \`/api/composio/status\` | Composio OAuth connection info |
-| GET | \`/api/health\` | Service health check |
-| GET | \`/api/users\` | List users (for member picker) |
+- **GET** \`/api/tools/status\` — Integration connection status
+- **GET** \`/api/composio/status\` — Composio OAuth connection info
+- **GET** \`/api/health\` — Service health check
+- **GET** \`/api/users\` — List users (for member picker)
+- **POST** \`/api/reset\` — Reset all user data (messages, activity, runs, memories, workflows)
 `,
   },
 ];

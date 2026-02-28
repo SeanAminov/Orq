@@ -26,7 +26,7 @@ function StatusDot({ status }) {
   return <span className="ap-status-dot" style={{ background: color }} />;
 }
 
-export default function ActivityPanel({ runs, tools, room, memories, onDeleteMemory, onClearChat, onClearActivity, onWorkflowChange }) {
+export default function ActivityPanel({ runs, tools, room, memories, onDeleteMemory, onClearChat, onClearActivity, onWorkflowChange, onResetAll, onAction }) {
   const [tab, setTab] = useState("activity");
 
   return (
@@ -124,12 +124,17 @@ export default function ActivityPanel({ runs, tools, room, memories, onDeleteMem
             <div className="ap-section ap-actions">
               <button className="ap-clear-btn" onClick={onClearChat}>Clear My Chat</button>
               <button className="ap-clear-btn" onClick={onClearActivity}>Clear My Activity</button>
+              <button className="ap-clear-btn ap-reset-btn" onClick={() => {
+                if (window.confirm("Reset everything? This clears all your messages, activity, memories, workflows, and agent runs.")) {
+                  onResetAll?.();
+                }
+              }}>Reset All</button>
             </div>
           </>
         )}
 
         <div className="ap-workflows" style={{ display: tab === "workflows" ? "block" : "none" }}>
-          <RunPanel onWorkflowChange={onWorkflowChange} />
+          <RunPanel onWorkflowChange={onWorkflowChange} onAction={onAction} />
         </div>
 
         <div className="ap-docs" style={{ display: tab === "docs" ? "block" : "none" }}>

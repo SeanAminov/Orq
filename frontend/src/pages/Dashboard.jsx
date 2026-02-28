@@ -202,6 +202,14 @@ export default function Dashboard() {
     fetchMemories();
   };
 
+  const handleResetAll = async () => {
+    await fetch("/api/reset", { method: "POST", credentials: "include" });
+    if (activeRoom) fetchRoomData(activeRoom);
+    fetchMemories();
+    fetchWorkflowTriggers();
+    setRuns([]);
+  };
+
   // Handle follow-up action buttons (e.g., "Save as Google Doc")
   const handleAction = (command) => {
     if (!activeRoom || loading) return;
@@ -257,6 +265,8 @@ export default function Dashboard() {
         onClearChat={handleClearChat}
         onClearActivity={handleClearActivity}
         onWorkflowChange={fetchWorkflowTriggers}
+        onResetAll={handleResetAll}
+        onAction={handleAction}
       />
 
       <CreateRoomModal

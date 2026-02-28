@@ -153,6 +153,7 @@ class WorkflowStepBody(BaseModel):
     type: str
     prompt: str
     tool: str | None = None
+    usePrevResult: bool = False
 
 class WorkflowCreateBody(BaseModel):
     name: str
@@ -442,7 +443,7 @@ def run_agent_in_room(room_id: str, body: RoomRunBody, user: User = Depends(get_
     ))
 
     # log to team activity
-    intent_labels = {"CREW": "Crew", "ACTION": "Action", "DATA": "Data", "PAY": "Skyfire", "CHAT": "Chat"}
+    intent_labels = {"CREW": "Crew", "ACTION": "Action", "DATA": "Data", "PAY": "Skyfire", "CHAT": "Chat", "RESEARCH": "Research", "CLEAN": "Clean"}
     short_msg = message[:80] + ("..." if len(message) > 80 else "")
     db.add(Activity(
         id=str(uuid.uuid4()), user_id=user.id,
@@ -722,7 +723,7 @@ def _check_workflow_trigger(message: str, user: User, db: Session, room_id: str 
     if not trigger_word:
         return None
     # Skip built-in triggers
-    builtins = {"orq", "crew", "action", "data", "pay", "summary"}
+    builtins = {"orq", "crew", "action", "data", "pay", "summary", "research", "clean"}
     if trigger_word.lower() in builtins:
         return None
     # Look up in Workflow table (own workflows + room-shared workflows)
@@ -759,7 +760,9 @@ def _run_workflow(workflow: "Workflow", extra_input: str, user: User, db: Sessio
     for i, step in enumerate(steps):
         step_type = step.get("type", "chat").lower()
         prompt = step.get("prompt", "")
-        # Replace {{prev_result}} placeholder
+        # Support both the usePrevResult flag and the legacy {{prev_result}} placeholder
+        if step.get("usePrevResult") and prev_result and "{{prev_result}}" not in prompt:
+            prompt = f"{prompt}\n\nHere is the output from the previous step:\n{prev_result}"
         prompt = prompt.replace("{{prev_result}}", prev_result)
         if extra_input and i == 0:
             prompt = f"{prompt}\n\nAdditional context: {extra_input}"
@@ -1364,27 +1367,41 @@ def _do_composio_action(message: str, user: User, db: Session, room_id: str = No
 
     shared_ctx = _get_shared_context(db, room_id)
     memory_ctx = _get_user_memories(db, user.id, room_id)
+    # Provide time already in Pacific so the LLM doesn't need to convert
+    pst = timezone(timedelta(hours=-8))
+    now_local = datetime.now(pst)
+    today_date = now_local.strftime("%Y-%m-%d")
+    today_readable = now_local.strftime("%A, %B %d, %Y at %I:%M %p PT")
     system_prompt = (
         "You are Orq, an action executor with access to real app integrations.\n"
         "Given the user's request, call the appropriate tool to fulfill it.\n\n"
-        "TOOL SELECTION RULES -- follow these strictly:\n"
-        "- 'send email' / 'email someone' / 'send a message to' -> use GMAIL_SEND_EMAIL\n"
-        "- 'draft email' / 'prepare email' / 'write email but don't send' -> use GMAIL_CREATE_EMAIL_DRAFT\n"
-        "- 'check email' / 'read emails' / 'latest emails' / 'inbox' -> use GMAIL_FETCH_EMAILS\n"
-        "- 'create doc' / 'new document' / 'write a doc' -> use GOOGLEDOCS_CREATE_DOCUMENT\n"
-        "- 'list files' / 'my drive' / 'google drive' -> use GOOGLEDRIVE_LIST_FILES\n"
-        "- 'commit' / 'push to github' / 'update readme' / 'create file on github' -> use GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS\n"
-        "- 'list repos' / 'show repositories' -> use GITHUB_LIST_REPOSITORIES_FOR_A_USER\n"
-        "- 'show commits' / 'recent commits' -> use GITHUB_LIST_COMMITS\n"
-        "- 'repo details' / 'about this repo' -> use GITHUB_GET_A_REPOSITORY\n"
-        "- 'schedule meeting' / 'calendar invite' / 'book a call' / 'set up an interview' / 'create event' -> use GOOGLECALENDAR_CREATE_EVENT\n"
-        "- 'check calendar' / 'upcoming events' / 'find meeting' -> use GOOGLECALENDAR_FIND_EVENT\n\n"
-        "IMPORTANT: When the user says 'send', ALWAYS use GMAIL_SEND_EMAIL, never GMAIL_CREATE_EMAIL_DRAFT.\n"
-        "Only use the draft tool when the user explicitly asks for a draft.\n\n"
-        "When the user asks to commit or push a file to GitHub, use GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS.\n"
-        "The owner and repo should be extracted from context or the user's message.\n\n"
-        "When composing email body content, write a complete, natural message.\n"
-        "Always call a tool -- do not just describe what you would do."
+        f"CURRENT DATE/TIME: {today_readable}\n"
+        f"TODAY'S DATE: {today_date}\n"
+        "The user is in US Pacific Time (PT, offset -08:00).\n\n"
+        "TOOL SELECTION:\n"
+        "- send/email someone -> GMAIL_SEND_EMAIL\n"
+        "- draft email -> GMAIL_CREATE_EMAIL_DRAFT\n"
+        "- check/read emails -> GMAIL_FETCH_EMAILS\n"
+        "- create doc/document -> GOOGLEDOCS_CREATE_DOCUMENT\n"
+        "- list files/drive -> GOOGLEDRIVE_LIST_FILES\n"
+        "- commit/push to github -> GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS\n"
+        "- list repos -> GITHUB_LIST_REPOSITORIES_FOR_A_USER\n"
+        "- show commits -> GITHUB_LIST_COMMITS\n"
+        "- repo details -> GITHUB_GET_A_REPOSITORY\n"
+        "- schedule/calendar/book/event -> GOOGLECALENDAR_CREATE_EVENT\n"
+        "- check calendar/find meeting -> GOOGLECALENDAR_FIND_EVENT\n\n"
+        "CALENDAR RULES:\n"
+        f"- Today is {today_date}. 'Tomorrow' is the next day.\n"
+        "- ALL times the user mentions are Pacific Time. Do NOT convert.\n"
+        f"- '3pm today' = {today_date}T15:00:00-08:00\n"
+        f"- '10am today' = {today_date}T10:00:00-08:00\n"
+        "- ALWAYS use RFC3339 with -08:00 offset: YYYY-MM-DDTHH:MM:SS-08:00\n"
+        "- Default duration is 1 hour. 'for 30 minutes' = start + 30 min.\n"
+        "- Use 'start' and 'end' fields with 'dateTime' key, not 'timeZone'.\n\n"
+        "RULES:\n"
+        "- 'send' = GMAIL_SEND_EMAIL, never draft unless user says 'draft'.\n"
+        "- Write complete, natural email body content.\n"
+        "- Always call a tool. Never just describe what you would do."
     ) + memory_ctx + room_context + shared_ctx
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -1410,7 +1427,7 @@ def _do_composio_action(message: str, user: User, db: Session, room_id: str = No
             args = json.loads(tc.function.arguments)
         except json.JSONDecodeError:
             args = {}
-        logger.info(f"[composio] executing {slug} with args: {list(args.keys())}")
+        logger.info(f"[composio] executing {slug} with args: {json.dumps(args, default=str)[:500]}")
         result = execute_composio_tool(slug, args)
         results.append({"tool": slug, "result": result})
 
@@ -2161,6 +2178,19 @@ def clear_activity(user: User = Depends(get_current_user), db: Session = Depends
     db.commit()
     return {"cleared": count}
 
+@app.post("/api/reset")
+def reset_all(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Nuclear reset: clears all messages, activity, runs, memories, and workflows for the user."""
+    counts = {}
+    counts["messages"] = db.query(Message).filter(Message.user_id == user.id).delete()
+    counts["activity"] = db.query(Activity).filter(Activity.user_id == user.id).delete()
+    counts["runs"] = db.query(AgentRun).filter(AgentRun.user_id == user.id).delete()
+    counts["memories"] = db.query(Memory).filter(Memory.user_id == user.id).delete()
+    counts["workflows"] = db.query(Workflow).filter(Workflow.owner_id == user.id).delete()
+    db.commit()
+    logger.info(f"[reset-all] user={user.name} cleared: {counts}")
+    return {"reset": True, "cleared": counts}
+
 @app.get("/api/messages")
 def get_messages(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     msgs = db.query(Message).filter(Message.user_id == user.id).order_by(Message.created_at.asc()).limit(100).all()
@@ -2216,7 +2246,7 @@ def delete_memory(memory_id: str, user: User = Depends(get_current_user), db: Se
 def create_workflow(body: WorkflowCreateBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Create a new custom workflow."""
     # Validate trigger doesn't clash with builtins
-    builtins = {"orq", "crew", "action", "data", "pay", "summary"}
+    builtins = {"orq", "crew", "action", "data", "pay", "summary", "research", "clean"}
     if body.trigger.lower() in builtins:
         raise HTTPException(400, f"Trigger '@{body.trigger}' is reserved. Choose a different name.")
     # Check for duplicate trigger for this user
@@ -2228,7 +2258,7 @@ def create_workflow(body: WorkflowCreateBody, user: User = Depends(get_current_u
         raise HTTPException(409, f"You already have a workflow with trigger '@{body.trigger}'.")
     now = datetime.now(timezone.utc)
     wf_id = str(uuid.uuid4())
-    steps_json = json.dumps([{"type": s.type, "prompt": s.prompt, "tool": s.tool} for s in body.steps])
+    steps_json = json.dumps([{"type": s.type, "prompt": s.prompt, "tool": s.tool, "usePrevResult": s.usePrevResult} for s in body.steps])
     db.add(Workflow(
         id=wf_id, name=body.name, trigger=body.trigger,
         description=body.description, steps=steps_json,
@@ -2265,6 +2295,31 @@ def list_workflows(user: User = Depends(get_current_user), db: Session = Depends
             "is_active": w.is_active, "created_at": str(w.created_at),
         })
     return results
+
+@app.put("/api/workflows/{workflow_id}")
+def update_workflow(workflow_id: str, body: WorkflowCreateBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Update an existing workflow."""
+    wf = db.query(Workflow).filter(Workflow.id == workflow_id, Workflow.owner_id == user.id).first()
+    if not wf:
+        raise HTTPException(404, "Workflow not found")
+    builtins = {"orq", "crew", "action", "data", "pay", "summary", "research", "clean"}
+    if body.trigger.lower() in builtins:
+        raise HTTPException(400, f"Trigger '@{body.trigger}' is reserved.")
+    # Check for duplicate trigger (excluding this workflow)
+    existing = db.query(Workflow).filter(
+        Workflow.trigger.ilike(body.trigger),
+        Workflow.owner_id == user.id,
+        Workflow.id != workflow_id,
+    ).first()
+    if existing:
+        raise HTTPException(409, f"You already have a workflow with trigger '@{body.trigger}'.")
+    wf.name = body.name
+    wf.trigger = body.trigger
+    wf.description = body.description
+    wf.steps = json.dumps([{"type": s.type, "prompt": s.prompt, "tool": s.tool, "usePrevResult": s.usePrevResult} for s in body.steps])
+    wf.room_id = body.room_id
+    db.commit()
+    return {"id": wf.id, "name": wf.name, "trigger": wf.trigger}
 
 @app.delete("/api/workflows/{workflow_id}")
 def delete_workflow(workflow_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):

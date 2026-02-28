@@ -36,19 +36,34 @@ const STEP_TYPES = [
   { value: "clean", label: "Clean Text (Skyfire)" },
 ];
 
-export default function RunPanel({ onWorkflowChange }) {
+const RUN_ACTIONS = {
+  candidate: [
+    { label: "Schedule Interview", command: "@action create a Google Calendar event for a candidate interview based on the research brief above" },
+    { label: "Save as Google Doc", command: "@action create a Google Doc with the candidate research brief above" },
+    { label: "Commit to GitHub", command: "@action commit the candidate research brief as a markdown file to GitHub" },
+    { label: "Email to Team", command: "@action email room members the candidate research brief above" },
+  ],
+  digest: [
+    { label: "Email Digest to Team", command: "@action email room members the commit digest above" },
+    { label: "Save as Google Doc", command: "@action create a Google Doc with the commit digest above" },
+    { label: "Schedule Review", command: "@action create a Google Calendar event for a code review meeting to discuss the commit digest above" },
+  ],
+};
+
+export default function RunPanel({ onWorkflowChange, onAction }) {
   const [runType, setRunType] = useState(null);
   const [formData, setFormData] = useState({});
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
-  // Workflow creation state
-  const [showCreateWorkflow, setShowCreateWorkflow] = useState(false);
+  // Workflow form state (shared for create & edit)
+  const [showWorkflowForm, setShowWorkflowForm] = useState(false);
+  const [editingWorkflow, setEditingWorkflow] = useState(null); // null = create mode, object = edit mode
   const [wfName, setWfName] = useState("");
   const [wfTrigger, setWfTrigger] = useState("");
   const [wfDescription, setWfDescription] = useState("");
-  const [wfSteps, setWfSteps] = useState([{ type: "chat", prompt: "" }]);
+  const [wfSteps, setWfSteps] = useState([{ type: "chat", prompt: "", usePrevResult: false }]);
   const [wfSaving, setWfSaving] = useState(false);
   const [wfError, setWfError] = useState(null);
 
@@ -64,6 +79,38 @@ export default function RunPanel({ onWorkflowChange }) {
       .then((r) => r.json())
       .then(setWorkflows)
       .catch(() => {});
+  };
+
+  const resetWorkflowForm = () => {
+    setWfName("");
+    setWfTrigger("");
+    setWfDescription("");
+    setWfSteps([{ type: "chat", prompt: "", usePrevResult: false }]);
+    setWfError(null);
+    setEditingWorkflow(null);
+  };
+
+  const openCreateForm = () => {
+    resetWorkflowForm();
+    setShowWorkflowForm(true);
+  };
+
+  const openEditForm = (wf) => {
+    setEditingWorkflow(wf);
+    setWfName(wf.name);
+    setWfTrigger(wf.trigger);
+    setWfDescription(wf.description || "");
+    setWfSteps(wf.steps.map((s, i) => {
+      const hasFlag = !!s.usePrevResult;
+      const hasPlaceholder = s.prompt.includes("{{prev_result}}");
+      return {
+        type: s.type,
+        prompt: hasPlaceholder && !hasFlag ? s.prompt.replace(/\{\{prev_result\}\}/g, "").trim() : s.prompt,
+        usePrevResult: i > 0 && (hasFlag || hasPlaceholder),
+      };
+    }));
+    setWfError(null);
+    setShowWorkflowForm(true);
   };
 
   const handleRun = async () => {
@@ -99,32 +146,37 @@ export default function RunPanel({ onWorkflowChange }) {
     }
   };
 
-  const handleCreateWorkflow = async () => {
+  const handleSaveWorkflow = async () => {
     if (!wfName.trim() || !wfTrigger.trim() || wfSteps.some((s) => !s.prompt.trim())) return;
     setWfSaving(true);
     setWfError(null);
+
+    const isEdit = !!editingWorkflow;
+    const url = isEdit ? `/api/workflows/${editingWorkflow.id}` : "/api/workflows";
+    const method = isEdit ? "PUT" : "POST";
+
     try {
-      const res = await fetch("/api/workflows", {
-        method: "POST",
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
           name: wfName,
           trigger: wfTrigger.replace(/^@/, ""),
           description: wfDescription,
-          steps: wfSteps,
+          steps: wfSteps.map((s, i) => ({
+            type: s.type,
+            prompt: s.prompt,
+            usePrevResult: i > 0 && !!s.usePrevResult,
+          })),
         }),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || `Error ${res.status}`);
       }
-      // Reset form and refresh
-      setWfName("");
-      setWfTrigger("");
-      setWfDescription("");
-      setWfSteps([{ type: "chat", prompt: "" }]);
-      setShowCreateWorkflow(false);
+      resetWorkflowForm();
+      setShowWorkflowForm(false);
       fetchWorkflows();
       onWorkflowChange?.();
     } catch (e) {
@@ -140,7 +192,7 @@ export default function RunPanel({ onWorkflowChange }) {
     onWorkflowChange?.();
   };
 
-  const addStep = () => setWfSteps((prev) => [...prev, { type: "chat", prompt: "" }]);
+  const addStep = () => setWfSteps((prev) => [...prev, { type: "chat", prompt: "", usePrevResult: true }]);
   const removeStep = (idx) => setWfSteps((prev) => prev.filter((_, i) => i !== idx));
   const updateStep = (idx, field, value) =>
     setWfSteps((prev) => prev.map((s, i) => (i === idx ? { ...s, [field]: value } : s)));
@@ -150,7 +202,7 @@ export default function RunPanel({ onWorkflowChange }) {
   return (
     <div className="run-panel">
       {/* Main menu: show run types + create workflow button + workflow list */}
-      {!runType && !showCreateWorkflow && (
+      {!runType && !showWorkflowForm && (
         <div className="run-type-grid">
           <h3>Workflows</h3>
           <p className="run-subtitle">Built-in pipelines and custom automations</p>
@@ -171,7 +223,7 @@ export default function RunPanel({ onWorkflowChange }) {
               className="run-type-card wf-create-card"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setShowCreateWorkflow(true)}
+              onClick={openCreateForm}
             >
               <strong>+ Create Workflow</strong>
               <p>Build a custom multi-step automation</p>
@@ -187,7 +239,10 @@ export default function RunPanel({ onWorkflowChange }) {
                   <div className="wf-card-header">
                     <span className="wf-trigger">@{w.trigger}</span>
                     <span className="wf-name">{w.name}</span>
-                    <button className="wf-delete" onClick={() => handleDeleteWorkflow(w.id)}>&times;</button>
+                    <div className="wf-card-actions">
+                      <button className="wf-edit" onClick={() => openEditForm(w)} title="Edit">&#9998;</button>
+                      <button className="wf-delete" onClick={() => handleDeleteWorkflow(w.id)} title="Delete">&times;</button>
+                    </div>
                   </div>
                   {w.description && <p className="wf-desc">{w.description}</p>}
                   <div className="wf-steps-preview">
@@ -204,14 +259,18 @@ export default function RunPanel({ onWorkflowChange }) {
         </div>
       )}
 
-      {/* Create Workflow Form */}
-      {showCreateWorkflow && (
+      {/* Create / Edit Workflow Form */}
+      {showWorkflowForm && (
         <div className="run-form wf-create-form">
-          <button className="btn-back" onClick={() => { setShowCreateWorkflow(false); setWfError(null); }}>
+          <button className="btn-back" onClick={() => { setShowWorkflowForm(false); resetWorkflowForm(); }}>
             &larr; Back
           </button>
-          <h3>Create Workflow</h3>
-          <p className="run-subtitle">Define a custom multi-step automation triggered by @mention</p>
+          <h3>{editingWorkflow ? "Edit Workflow" : "Create Workflow"}</h3>
+          <p className="run-subtitle">
+            {editingWorkflow
+              ? `Editing @${editingWorkflow.trigger}`
+              : "Define a custom multi-step automation triggered by @mention"}
+          </p>
 
           <div className="run-field">
             <label>Workflow Name <span className="required">*</span></label>
@@ -249,24 +308,36 @@ export default function RunPanel({ onWorkflowChange }) {
           <div className="wf-steps-builder">
             <label>Steps</label>
             {wfSteps.map((step, idx) => (
-              <div key={idx} className="wf-step-row">
-                <span className="wf-step-num">{idx + 1}</span>
-                <select
-                  value={step.type}
-                  onChange={(e) => updateStep(idx, "type", e.target.value)}
-                >
-                  {STEP_TYPES.map((st) => (
-                    <option key={st.value} value={st.value}>{st.label}</option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  placeholder="Prompt for this step... Use {{prev_result}} for chaining"
-                  value={step.prompt}
-                  onChange={(e) => updateStep(idx, "prompt", e.target.value)}
-                />
-                {wfSteps.length > 1 && (
-                  <button className="wf-step-remove" onClick={() => removeStep(idx)}>&times;</button>
+              <div key={idx} className="wf-step-block">
+                <div className="wf-step-row">
+                  <span className="wf-step-num">{idx + 1}</span>
+                  <select
+                    value={step.type}
+                    onChange={(e) => updateStep(idx, "type", e.target.value)}
+                  >
+                    {STEP_TYPES.map((st) => (
+                      <option key={st.value} value={st.value}>{st.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    placeholder={`Prompt for step ${idx + 1}...`}
+                    value={step.prompt}
+                    onChange={(e) => updateStep(idx, "prompt", e.target.value)}
+                  />
+                  {wfSteps.length > 1 && (
+                    <button className="wf-step-remove" onClick={() => removeStep(idx)}>&times;</button>
+                  )}
+                </div>
+                {idx > 0 && (
+                  <label className="wf-chain-toggle">
+                    <input
+                      type="checkbox"
+                      checked={!!step.usePrevResult}
+                      onChange={(e) => updateStep(idx, "usePrevResult", e.target.checked)}
+                    />
+                    <span className="wf-chain-label">Use output from Step {idx}</span>
+                  </label>
                 )}
               </div>
             ))}
@@ -277,10 +348,10 @@ export default function RunPanel({ onWorkflowChange }) {
 
           <button
             className="btn-run"
-            onClick={handleCreateWorkflow}
+            onClick={handleSaveWorkflow}
             disabled={wfSaving || !wfName.trim() || !wfTrigger.trim() || wfSteps.some((s) => !s.prompt.trim())}
           >
-            {wfSaving ? "Saving..." : "Create Workflow"}
+            {wfSaving ? "Saving..." : editingWorkflow ? "Save Changes" : "Create Workflow"}
           </button>
         </div>
       )}
@@ -391,6 +462,17 @@ export default function RunPanel({ onWorkflowChange }) {
             <div className="run-outreach">
               <h4>Draft Outreach Message</h4>
               <div className="outreach-box">{result.outreach_message}</div>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          {onAction && RUN_ACTIONS[runType] && (
+            <div className="run-actions">
+              {RUN_ACTIONS[runType].map((a, i) => (
+                <button key={i} className="run-action-btn" onClick={() => onAction(a.command)}>
+                  {a.label}
+                </button>
+              ))}
             </div>
           )}
 

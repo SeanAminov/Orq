@@ -77,17 +77,52 @@ def get_composio_tools(tool_slugs: list[str] | None = None):
     return provider.wrap_tools(raw)
 
 def execute_composio_tool(slug: str, arguments: dict) -> dict:
-    """Execute a single Composio tool and return the result."""
+    """Execute a single Composio tool and return the result.
+    Tries the primary user_id first, then falls back to other connected account user IDs."""
     client = get_composio_client()
     if not client:
         return {"error": "Composio not configured"}
-    result = client.tools.execute(
-        slug=slug,
-        arguments=arguments,
-        user_id=COMPOSIO_USER_ID,
-        dangerously_skip_version_check=True,
-    )
-    return result if isinstance(result, dict) else {"data": str(result)}
+
+    # Determine toolkit prefix for fallback lookup
+    slug_lower = slug.lower()
+    toolkit_slug = slug.split("_")[0].lower()
+    for prefix in ["googlecalendar", "googledocs", "googledrive", "gmail", "github"]:
+        if slug_lower.startswith(prefix):
+            toolkit_slug = prefix
+            break
+
+    # Try primary user_id first
+    try:
+        result = client.tools.execute(
+            slug=slug,
+            arguments=arguments,
+            user_id=COMPOSIO_USER_ID,
+            dangerously_skip_version_check=True,
+        )
+        return result if isinstance(result, dict) else {"data": str(result)}
+    except Exception as primary_err:
+        # Check if it's a ConnectedAccountNotFound error
+        if "connectedaccountnotfound" not in str(primary_err).lower():
+            return {"error": str(primary_err)}
+
+    # Fallback: scan connected accounts for a matching toolkit with a different user_id
+    try:
+        accs = client.connected_accounts.list()
+        items = accs.items if hasattr(accs, "items") else []
+        for acc in items:
+            acc_toolkit = getattr(acc, "toolkit", None)
+            acc_slug = getattr(acc_toolkit, "slug", "") if acc_toolkit else ""
+            acc_uid = getattr(acc, "user_id", "")
+            if acc_slug == toolkit_slug and acc_uid and acc_uid != COMPOSIO_USER_ID:
+                result2 = client.tools.execute(
+                    slug=slug, arguments=arguments,
+                    user_id=acc_uid, dangerously_skip_version_check=True,
+                )
+                return result2 if isinstance(result2, dict) else {"data": str(result2)}
+    except Exception as fallback_err:
+        return {"error": f"Fallback failed: {fallback_err}"}
+
+    return {"error": f"No connected account found for toolkit {toolkit_slug}"}
 
 # ── Snowflake ──────────────────────────────────────────────────────────────
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")

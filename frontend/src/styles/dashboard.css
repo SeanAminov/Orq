@@ -724,6 +724,15 @@
   color: var(--text-primary);
   border-color: var(--accent);
 }
+.ap-reset-btn {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+.ap-reset-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: #ef4444;
+}
 
 /* Workflows (RunPanel inside activity panel) */
 .ap-workflows {
@@ -1144,6 +1153,27 @@
   line-height: 1.6;
   white-space: pre-wrap;
 }
+.run-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.run-action-btn {
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-weight: 500;
+}
+.run-action-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
 .run-meta {
   display: flex;
   gap: 12px;
@@ -1397,16 +1427,24 @@
   font-weight: 600;
   color: var(--text-primary);
 }
-.wf-delete {
+.wf-card-actions {
+  display: flex;
+  gap: 2px;
   margin-left: auto;
+}
+.wf-edit, .wf-delete {
   background: none;
   border: none;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 1.1rem;
+  font-size: 1rem;
   padding: 0 4px;
   opacity: 0.5;
   transition: opacity 0.15s, color 0.15s;
+}
+.wf-edit:hover {
+  opacity: 1;
+  color: var(--accent);
 }
 .wf-delete:hover {
   opacity: 1;
@@ -1457,11 +1495,13 @@
   color: var(--text-secondary);
   margin-bottom: 8px;
 }
+.wf-step-block {
+  margin-bottom: 8px;
+}
 .wf-step-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
 }
 .wf-step-num {
   font-size: 0.7rem;
@@ -1500,6 +1540,27 @@
 .wf-step-remove:hover {
   opacity: 1;
   color: #ef4444;
+}
+.wf-chain-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0 22px;
+  cursor: pointer;
+  user-select: none;
+}
+.wf-chain-toggle input[type="checkbox"] {
+  accent-color: var(--accent, #6c5ce7);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+.wf-chain-label {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+}
+.wf-chain-toggle:hover .wf-chain-label {
+  color: var(--accent, #6c5ce7);
 }
 .wf-add-step {
   background: none;
