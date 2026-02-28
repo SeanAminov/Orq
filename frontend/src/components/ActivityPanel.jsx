@@ -3,11 +3,11 @@ import RunPanel from "./RunPanel";
 import DocsPanel from "./DocsPanel";
 
 const INTENT_COLORS = {
-  crew:   { bg: "rgba(108, 92, 231, 0.15)", color: "#6c5ce7", label: "Crew" },
-  action: { bg: "rgba(0, 206, 201, 0.15)",  color: "#00cec9", label: "Action" },
-  data:   { bg: "rgba(9, 132, 227, 0.15)",  color: "#0984e3", label: "Data" },
-  pay:    { bg: "rgba(253, 203, 110, 0.2)", color: "#f39c12", label: "Pay" },
-  chat:   { bg: "rgba(150, 150, 170, 0.15)",color: "#999", label: "Chat" },
+  crew:   { bg: "rgba(139, 92, 246, 0.12)", color: "#8b5cf6", label: "Crew" },
+  action: { bg: "rgba(34, 197, 94, 0.12)",  color: "#22c55e", label: "Action" },
+  data:   { bg: "rgba(59, 130, 246, 0.12)", color: "#3b82f6", label: "Data" },
+  pay:    { bg: "rgba(245, 158, 11, 0.12)", color: "#f59e0b", label: "Pay" },
+  chat:   { bg: "rgba(161, 161, 170, 0.12)", color: "#a1a1aa", label: "Chat" },
 };
 
 function IntentBadge({ intent }) {
@@ -20,7 +20,7 @@ function IntentBadge({ intent }) {
 }
 
 function StatusDot({ status }) {
-  const color = status === "completed" ? "#00cec9" : status === "failed" ? "#ff6b6b" : "#f39c12";
+  const color = status === "completed" ? "#22c55e" : status === "failed" ? "#ef4444" : "#f59e0b";
   return <span className="ap-status-dot" style={{ background: color }} />;
 }
 

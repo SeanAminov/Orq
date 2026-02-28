@@ -6,7 +6,6 @@ const RUN_TYPES = [
   {
     key: "candidate",
     label: "Candidate Research",
-    icon: "\u{1F50D}",
     desc: "Analyze a GitHub profile for a target role",
     fields: [
       { name: "github_username", label: "GitHub Username", placeholder: "e.g. torvalds", required: true },
@@ -18,7 +17,6 @@ const RUN_TYPES = [
   {
     key: "digest",
     label: "Commit Digest",
-    icon: "\u{1F4CA}",
     desc: "Generate a feature-grouped commit summary",
     fields: [
       { name: "repo", label: "Repository", placeholder: "owner/repo (e.g. SeanAminov/Orq)", required: true },
@@ -46,7 +44,6 @@ export default function RunPanel() {
       ? "/api/runs/candidate-research"
       : "/api/runs/commit-digest";
 
-    // transform form data
     const body = { ...formData };
     if (body.since_days) body.since_days = parseInt(body.since_days) || 7;
     if (runType === "candidate") body.generate_outreach = true;
@@ -58,14 +55,11 @@ export default function RunPanel() {
         credentials: "include",
         body: JSON.stringify(body),
       });
-
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || `Error ${res.status}`);
       }
-
-      const data = await res.json();
-      setResult(data);
+      setResult(await res.json());
     } catch (e) {
       setError(e.message);
     } finally {
@@ -77,7 +71,6 @@ export default function RunPanel() {
 
   return (
     <div className="run-panel">
-      {/* Type selector */}
       {!runType && (
         <div className="run-type-grid">
           <h3>Choose a Workflow</h3>
@@ -91,7 +84,6 @@ export default function RunPanel() {
                 whileTap={{ scale: 0.98 }}
                 onClick={() => { setRunType(rt.key); setFormData({}); setResult(null); }}
               >
-                <span className="run-type-icon">{rt.icon}</span>
                 <strong>{rt.label}</strong>
                 <p>{rt.desc}</p>
               </motion.div>
@@ -100,13 +92,12 @@ export default function RunPanel() {
         </div>
       )}
 
-      {/* Form */}
       {runType && !result && (
         <div className="run-form">
           <button className="btn-back" onClick={() => { setRunType(null); setResult(null); }}>
             &larr; Back
           </button>
-          <h3>{config.icon} {config.label}</h3>
+          <h3>{config.label}</h3>
           <p className="run-subtitle">{config.desc}</p>
 
           {config.fields.map((f) => (
@@ -166,7 +157,6 @@ export default function RunPanel() {
         </div>
       )}
 
-      {/* Result */}
       {result && (
         <div className="run-result">
           <button className="btn-back" onClick={() => { setRunType(null); setResult(null); setFormData({}); }}>
@@ -174,27 +164,26 @@ export default function RunPanel() {
           </button>
 
           <div className="run-result-header">
-            <h3>{config.icon} {config.label} Complete</h3>
+            <h3>{config.label} Complete</h3>
             <span className="run-id">Run: {result.run_id}</span>
           </div>
 
-          {/* Trace */}
           {result.trace && (
             <div className="run-trace">
               {result.trace.map((t, i) => (
                 <span key={i} className={`trace-step ${t.status}`}>
-                  {t.status === "success" ? "\u2705" : "\u274C"} {t.task}
+                  {t.status === "success" ? "Done" : "Failed"} — {t.task}
                 </span>
               ))}
             </div>
           )}
 
-          {/* Main content */}
           <div className="run-content">
             <ReactMarkdown
               components={{
-                code({ node, inline, className, children, ...props }) {
-                  if (inline) return <code className="inline-code" {...props}>{children}</code>;
+                code({ className, children, ...props }) {
+                  const isBlock = /language-/.test(className || "");
+                  if (!isBlock) return <code className="inline-code" {...props}>{children}</code>;
                   return <pre className="code-block"><code {...props}>{children}</code></pre>;
                 },
               }}
@@ -203,7 +192,6 @@ export default function RunPanel() {
             </ReactMarkdown>
           </div>
 
-          {/* Outreach message */}
           {result.outreach_message && (
             <div className="run-outreach">
               <h4>Draft Outreach Message</h4>
@@ -211,7 +199,6 @@ export default function RunPanel() {
             </div>
           )}
 
-          {/* Metadata */}
           <div className="run-meta">
             {result.github_data && (
               <span>Repos analyzed: {result.github_data.repo_count} ({result.github_data.repos?.join(", ")})</span>

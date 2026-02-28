@@ -78,7 +78,7 @@ export default function Dashboard() {
     const tempId = `temp-${Date.now()}`;
     setMessages((prev) => [
       ...prev,
-      { id: tempId, role: "user", content: text, sender_name: user.name },
+      { id: tempId, role: "user", content: text, sender_name: user.name, sender_id: user.id },
     ]);
     setLoading(true);
     setLoadingIntent(isAiTrigger ? (intentHint || "thinking") : "");

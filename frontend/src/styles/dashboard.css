@@ -38,9 +38,9 @@
 }
 .rs-header .theme-toggle {
   position: static;
-  width: 30px;
-  height: 30px;
-  font-size: 0.85rem;
+  padding: 3px 8px;
+  font-size: 0.65rem;
+  border-radius: 4px;
 }
 
 .rs-user {
@@ -942,11 +942,6 @@
 }
 .run-type-card:hover {
   border-color: var(--accent);
-}
-.run-type-icon {
-  font-size: 1.3rem;
-  display: block;
-  margin-bottom: 6px;
 }
 .run-type-card strong {
   font-size: 0.92rem;

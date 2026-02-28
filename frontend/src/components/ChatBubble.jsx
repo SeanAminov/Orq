@@ -24,10 +24,9 @@ export default function ChatBubble({ role, content, sender, senderId, currentUse
         {isAssistant ? (
           <ReactMarkdown
             components={{
-              code({ node, inline, className, children, ...props }) {
-                if (inline) {
-                  return <code className="inline-code" {...props}>{children}</code>;
-                }
+              code({ className, children, ...props }) {
+                const isBlock = /language-/.test(className || "");
+                if (!isBlock) return <code className="inline-code" {...props}>{children}</code>;
                 return (
                   <pre className="code-block">
                     <code {...props}>{children}</code>
