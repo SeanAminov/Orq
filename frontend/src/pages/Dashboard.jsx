@@ -98,8 +98,13 @@ export default function Dashboard() {
         const data = await res.json();
         setLoadingIntent(data.intent || "");
 
-        // refresh full room data to get server-side messages
+        // refresh full room data to get server-side messages + updated costs
         fetchRoomData(activeRoom);
+        // refresh rooms to update budget badge in sidebar
+        fetch("/api/rooms", { credentials: "include" })
+          .then((r) => r.json())
+          .then(setRooms)
+          .catch(() => {});
       } else {
         // plain message
         await fetch(`/api/rooms/${activeRoom}/messages`, {
@@ -158,6 +163,14 @@ export default function Dashboard() {
 
   const currentRoom = rooms.find((r) => r.id === activeRoom);
 
+  // build a map of run_id -> cost info for ChatBubble
+  const runCostMap = {};
+  for (const r of runs) {
+    if (r.id && r.cost_usd) {
+      runCostMap[r.id] = { cost: r.cost_usd, tokens: r.tokens_used };
+    }
+  }
+
   if (!user) return null;
 
   return (
@@ -177,6 +190,8 @@ export default function Dashboard() {
         loading={loading}
         loadingIntent={loadingIntent}
         onSend={handleSend}
+        runCostMap={runCostMap}
+        currentUserId={user?.id}
       />
 
       <ActivityPanel

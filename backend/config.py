@@ -123,5 +123,8 @@ SKYFIRE_BASE_URL = os.getenv("SKYFIRE_BASE_URL", "https://api.skyfire.xyz")
 # ── CrewAI ─────────────────────────────────────────────────────────────────
 CREWAI_VERBOSE = os.getenv("CREWAI_VERBOSE", "true").lower() == "true"
 
+# -- GitHub ────────────────────────────────────────────────────────────────
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+
 # ── Auth ───────────────────────────────────────────────────────────────────
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")

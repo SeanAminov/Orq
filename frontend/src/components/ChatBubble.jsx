@@ -1,26 +1,29 @@
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 
-export default function ChatBubble({ role, content, sender, runId }) {
-  const isUser = role === "user";
+export default function ChatBubble({ role, content, sender, senderId, currentUserId, runId, cost, tokens }) {
+  const isAssistant = role === "assistant";
+  const isOwnMessage = !isAssistant && senderId === currentUserId;
+  const bubbleClass = isAssistant ? "assistant" : isOwnMessage ? "own" : "other";
+  const hasCost = cost && parseFloat(cost) > 0;
+
   return (
     <motion.div
-      className={`chat-bubble ${isUser ? "user" : "assistant"}`}
-      initial={{ opacity: 0, y: 10 }}
+      className={`chat-bubble ${bubbleClass}`}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.15 }}
+      transition={{ duration: 0.12 }}
     >
-      <span className="chat-sender">
-        {sender}
-        {runId && !isUser && <span style={{ opacity: 0.5, marginLeft: 6, fontSize: "0.6rem" }}>via @orq</span>}
-      </span>
+      {(!isOwnMessage || isAssistant) && (
+        <span className="chat-sender">
+          {sender}
+          {runId && isAssistant && <span className="chat-via">via @orq</span>}
+        </span>
+      )}
       <div className="chat-content">
-        {isUser ? (
-          <p>{content}</p>
-        ) : (
+        {isAssistant ? (
           <ReactMarkdown
             components={{
-              // render code blocks with syntax styling
               code({ node, inline, className, children, ...props }) {
                 if (inline) {
                   return <code className="inline-code" {...props}>{children}</code>;
@@ -31,7 +34,6 @@ export default function ChatBubble({ role, content, sender, runId }) {
                   </pre>
                 );
               },
-              // keep tables readable
               table({ children }) {
                 return (
                   <div className="table-wrap">
@@ -43,8 +45,15 @@ export default function ChatBubble({ role, content, sender, runId }) {
           >
             {content}
           </ReactMarkdown>
+        ) : (
+          <p>{content}</p>
         )}
       </div>
+      {hasCost && isAssistant && (
+        <span className="chat-cost">
+          ${parseFloat(cost).toFixed(4)} &middot; {tokens || 0} tokens
+        </span>
+      )}
     </motion.div>
   );
 }

@@ -65,6 +65,11 @@ export default function ActivityPanel({ runs, tools, room, onClearChat, onClearA
                           <div className="ap-progress-bar"><div className="ap-progress-fill" /></div>
                         </div>
                       )}
+                      {r.cost_usd && parseFloat(r.cost_usd) > 0 && (
+                        <div className="ap-run-cost">
+                          ${parseFloat(r.cost_usd).toFixed(4)} &middot; {r.tokens_used || 0} tokens
+                        </div>
+                      )}
                       <div className="ap-run-time">
                         {new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </div>

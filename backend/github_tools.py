@@ -10,8 +10,12 @@ from datetime import datetime, timedelta, timezone
 from crewai.tools import BaseTool
 
 
+from config import GITHUB_TOKEN
+
 GITHUB_API = "https://api.github.com"
 HEADERS = {"Accept": "application/vnd.github.v3+json"}
+if GITHUB_TOKEN:
+    HEADERS["Authorization"] = f"token {GITHUB_TOKEN}"
 
 
 def _gh_get(path: str, params: dict | None = None) -> dict | list:
@@ -88,7 +92,7 @@ def fetch_repo_readme(owner: str, repo: str) -> str:
     """Fetch README content as text."""
     resp = requests.get(
         f"{GITHUB_API}/repos/{owner}/{repo}/readme",
-        headers={"Accept": "application/vnd.github.raw"},
+        headers={**HEADERS, "Accept": "application/vnd.github.raw"},
         timeout=15,
     )
     if resp.ok:

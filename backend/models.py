@@ -66,6 +66,8 @@ class AgentRun(Base):
     status = Column(String, default="running")
     input_text = Column(Text, default="")
     summary = Column(Text, default="")
+    tokens_used = Column(String, default="0")
+    cost_usd = Column(String, default="0.00")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     completed_at = Column(DateTime, nullable=True)
 

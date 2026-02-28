@@ -31,12 +31,10 @@
   border-bottom: 1px solid var(--border);
 }
 .rs-logo {
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   font-weight: 800;
-  background: linear-gradient(135deg, var(--accent), var(--success));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
 }
 .rs-header .theme-toggle {
   position: static;
@@ -130,8 +128,10 @@
 .rs-room.active .rs-room-name {
   font-weight: 600;
 }
-.rs-room-icon {
-  font-size: 1.1rem;
+.rs-room-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   flex-shrink: 0;
 }
 .rs-room-info {
@@ -173,10 +173,6 @@
   color: var(--accent);
   background: var(--accent-light);
 }
-.rs-create span {
-  font-size: 1rem;
-  font-weight: 700;
-}
 
 /* ============================================= */
 /* Chat Panel (Center)                            */
@@ -204,8 +200,12 @@
   align-items: center;
   gap: 10px;
 }
-.cp-room-icon {
-  font-size: 1.3rem;
+.cp-room-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
 }
 .cp-room-name {
   font-size: 1rem;
@@ -245,10 +245,6 @@
   text-align: center;
   max-width: 500px;
   padding: 40px 20px;
-}
-.cp-empty-icon {
-  font-size: 3rem;
-  margin-bottom: 12px;
 }
 .cp-empty h3 {
   font-size: 1.2rem;
@@ -292,17 +288,10 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
 }
 .cp-example:hover {
   border-color: var(--accent);
   color: var(--text-primary);
-}
-.cp-example span {
-  font-size: 1rem;
-  flex-shrink: 0;
 }
 
 /* Chat bubbles (reused from before) */
@@ -312,11 +301,16 @@
   border-radius: var(--radius);
   word-wrap: break-word;
 }
-.chat-bubble.user {
+.chat-bubble.own {
   align-self: flex-end;
   background: var(--accent);
   color: #fff;
   white-space: pre-wrap;
+}
+.chat-bubble.other {
+  align-self: flex-start;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
 }
 .chat-bubble.assistant {
   align-self: flex-start;
@@ -821,32 +815,6 @@
   border-color: var(--accent);
 }
 
-.icon-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.icon-option {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-card);
-  font-size: 1.1rem;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.icon-option:hover {
-  border-color: var(--accent);
-}
-.icon-option.active {
-  border-color: var(--accent);
-  background: var(--accent-light);
-}
-
 .modal-actions {
   display: flex;
   gap: 10px;
@@ -1230,3 +1198,59 @@
 .docs-content ul, .docs-content ol { margin: 6px 0 10px 18px; color: var(--text-secondary); }
 .docs-content li { margin-bottom: 3px; font-size: 0.85rem; }
 .docs-content hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+/* ── Cost tracking displays ─────────────────────────────────────────────── */
+.chat-cost {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.65rem;
+  opacity: 0.45;
+  font-family: monospace;
+}
+.chat-via {
+  opacity: 0.5;
+  margin-left: 6px;
+  font-size: 0.6rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.date-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  margin: 4px 0;
+}
+.date-separator::before,
+.date-separator::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.date-separator span {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-weight: 500;
+}
+.ap-run-cost {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  font-family: monospace;
+  opacity: 0.7;
+}
+.rs-room-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.rs-budget {
+  font-size: 0.6rem;
+  opacity: 0.5;
+  font-family: monospace;
+  white-space: nowrap;
+}

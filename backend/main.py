@@ -345,20 +345,34 @@ def run_agent_in_room(room_id: str, body: RoomRunBody, user: User = Depends(get_
     }
     handler = handlers.get(intent, _do_chat)
 
+    tokens = 0
+    cost = 0.0
     try:
-        reply = handler(message, user, db)
+        result = handler(message, user, db, room_id)
+        # handlers return {"reply": ..., "tokens": ..., "cost": ...}
+        reply = result.get("reply", str(result)) if isinstance(result, dict) else str(result)
+        tokens = result.get("tokens", 0) if isinstance(result, dict) else 0
+        cost = result.get("cost", 0.0) if isinstance(result, dict) else 0.0
         status = "completed"
     except Exception as e:
         logger.error(f"[room:{room_id}] {intent} error: {e}")
         reply = f"Error: {e}"
         status = "failed"
 
-    # update agent run
+    # update agent run with cost
     run = db.query(AgentRun).filter(AgentRun.id == run_id).first()
     if run:
         run.status = status
         run.summary = reply[:500] if reply else ""
+        run.tokens_used = str(tokens)
+        run.cost_usd = f"{cost:.6f}"
         run.completed_at = datetime.now(timezone.utc)
+
+    # accumulate cost on room
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if room and cost > 0:
+        prev = float(room.skyfire_budget or "0")
+        room.skyfire_budget = f"{prev + cost:.6f}"
 
     # save assistant reply to room
     db.add(Message(
@@ -379,7 +393,7 @@ def run_agent_in_room(room_id: str, body: RoomRunBody, user: User = Depends(get_
     ))
 
     db.commit()
-    return {"reply": reply, "intent": intent.lower(), "run_id": run_id}
+    return {"reply": reply, "intent": intent.lower(), "run_id": run_id, "tokens": tokens, "cost_usd": f"{cost:.6f}"}
 
 @app.get("/api/rooms/{room_id}/runs")
 def get_room_runs(room_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -401,6 +415,8 @@ def get_room_runs(room_id: str, user: User = Depends(get_current_user), db: Sess
             "id": r.id, "intent": r.intent, "status": r.status,
             "user_name": r.user_name, "input_text": r.input_text,
             "summary": r.summary[:200] if r.summary else "",
+            "tokens_used": r.tokens_used or "0",
+            "cost_usd": r.cost_usd or "0.00",
             "created_at": str(r.created_at),
             "completed_at": str(r.completed_at) if r.completed_at else None,
         }
@@ -439,22 +455,53 @@ def _classify_intent(client, message: str) -> str:
     return "CHAT"
 
 # ===========================================================================
-#  MODE HANDLERS (unchanged logic from previous version)
+#  COST TRACKING HELPERS
+# ===========================================================================
+
+# GPT-4o-mini pricing (per 1K tokens)
+_COST_PER_1K_INPUT = 0.00015
+_COST_PER_1K_OUTPUT = 0.0006
+
+def _calc_cost(usage) -> dict:
+    """Extract token count and estimated cost from an OpenAI usage object."""
+    if not usage:
+        return {"tokens": 0, "cost": 0.0}
+    inp = getattr(usage, "prompt_tokens", 0) or 0
+    out = getattr(usage, "completion_tokens", 0) or 0
+    total = inp + out
+    cost = (inp / 1000 * _COST_PER_1K_INPUT) + (out / 1000 * _COST_PER_1K_OUTPUT)
+    return {"tokens": total, "cost": round(cost, 6)}
+
+def _cost_result(reply: str, tokens: int = 0, cost: float = 0.0) -> dict:
+    """Wrap a handler reply with cost metadata."""
+    return {"reply": reply, "tokens": tokens, "cost": cost}
+
+# ===========================================================================
+#  MODE HANDLERS
 # ===========================================================================
 
 # --- 1. Chat (OpenAI) -----------------------------------------------------
 
-def _do_chat(message: str, user: User, db: Session) -> str:
+def _do_chat(message: str, user: User, db: Session, room_id: str = None) -> dict:
     client = get_openai_client()
     if not client:
-        return "OpenAI is not configured. Set OPENAI_API_KEY in .env."
-    history = (
-        db.query(Message)
-        .filter(Message.user_id == user.id)
-        .order_by(Message.created_at.desc())
-        .limit(20)
-        .all()
-    )[::-1]
+        return _cost_result("OpenAI is not configured. Set OPENAI_API_KEY in .env.")
+    if room_id:
+        history = (
+            db.query(Message)
+            .filter(Message.room_id == room_id)
+            .order_by(Message.created_at.desc())
+            .limit(20)
+            .all()
+        )[::-1]
+    else:
+        history = (
+            db.query(Message)
+            .filter(Message.user_id == user.id)
+            .order_by(Message.created_at.desc())
+            .limit(20)
+            .all()
+        )[::-1]
     messages = [{"role": "system", "content": (
         "You are Orq, an AI productivity assistant built for agentic workflows. "
         "You help users with tasks, planning, research, data analysis, and actions. "
@@ -466,13 +513,16 @@ def _do_chat(message: str, user: User, db: Session) -> str:
         messages.append({"role": m.role, "content": m.content})
     messages.append({"role": "user", "content": message})
     resp = client.chat.completions.create(model=OPENAI_MODEL, messages=messages)
-    return resp.choices[0].message.content
+    ci = _calc_cost(resp.usage)
+    return _cost_result(resp.choices[0].message.content, ci["tokens"], ci["cost"])
 
 
 # --- 2. Crew (CrewAI) -----------------------------------------------------
 
-def _do_crew(message: str, user: User, db: Session) -> str:
+def _do_crew(message: str, user: User, db: Session, room_id: str = None) -> dict:
     msg_lower = message.lower()
+    total_tokens = 0
+    total_cost = 0.0
 
     if any(kw in msg_lower for kw in ["research candidate", "github profile", "evaluate developer",
                                        "candidate diligence", "technical assessment", "review github"]):
@@ -489,14 +539,25 @@ def _do_crew(message: str, user: User, db: Session) -> str:
                     {"role": "user", "content": message},
                 ],
             )
+            ci = _calc_cost(extract.usage)
+            total_tokens += ci["tokens"]
+            total_cost += ci["cost"]
             params = _safe_json(extract.choices[0].message.content)
             if params.get("github_username"):
-                result = run_candidate_research(
-                    github_username=params["github_username"],
-                    target_role=params.get("target_role", "Software Engineer"),
-                    candidate_name=params.get("candidate_name", ""),
-                )
-                return result.get("candidate_brief", "Research completed but no brief generated.")
+                try:
+                    result = run_candidate_research(
+                        github_username=params["github_username"],
+                        target_role=params.get("target_role", "Software Engineer"),
+                        candidate_name=params.get("candidate_name", ""),
+                    )
+                    total_tokens += 8000
+                    total_cost += 8000 / 1000 * _COST_PER_1K_OUTPUT
+                    return _cost_result(result.get("candidate_brief", "Research completed but no brief generated."), total_tokens, total_cost)
+                except Exception as e:
+                    logger.error(f"[crew] candidate research error: {e}")
+                    total_tokens += 500
+                    total_cost += 500 / 1000 * _COST_PER_1K_OUTPUT
+                    return _cost_result(f"Candidate research failed: {e}", total_tokens, total_cost)
 
     if any(kw in msg_lower for kw in ["commit digest", "what was pushed", "commit summary",
                                        "code changes", "what did", "commits from"]):
@@ -514,6 +575,9 @@ def _do_crew(message: str, user: User, db: Session) -> str:
                     {"role": "user", "content": message},
                 ],
             )
+            ci = _calc_cost(extract.usage)
+            total_tokens += ci["tokens"]
+            total_cost += ci["cost"]
             params = _safe_json(extract.choices[0].message.content)
             if params.get("repo"):
                 result = run_commit_digest(
@@ -522,32 +586,86 @@ def _do_crew(message: str, user: User, db: Session) -> str:
                     path_filter=params.get("path_filter"),
                     since_days=params.get("since_days", 7),
                 )
-                return result.get("digest_markdown", "Digest generated but no content.")
+                # CrewAI digest runs ~3 agents; estimate ~5000 tokens
+                total_tokens += 5000
+                total_cost += 5000 / 1000 * _COST_PER_1K_OUTPUT
+                return _cost_result(result.get("digest_markdown", "Digest generated but no content."), total_tokens, total_cost)
 
-    history = (
-        db.query(Message)
-        .filter(Message.user_id == user.id)
-        .order_by(Message.created_at.desc())
-        .limit(10)
-        .all()
-    )[::-1]
+    if room_id:
+        history = (
+            db.query(Message)
+            .filter(Message.room_id == room_id)
+            .order_by(Message.created_at.desc())
+            .limit(10)
+            .all()
+        )[::-1]
+    else:
+        history = (
+            db.query(Message)
+            .filter(Message.user_id == user.id)
+            .order_by(Message.created_at.desc())
+            .limit(10)
+            .all()
+        )[::-1]
     context = "\n".join(f"{m.role}: {m.content}" for m in history)
-    return run_crew(message, context)
+    reply = run_crew(message, context)
+    # General crew runs 3 agents; estimate ~6000 tokens
+    total_tokens += 6000
+    total_cost += 6000 / 1000 * _COST_PER_1K_OUTPUT
+    return _cost_result(reply, total_tokens, total_cost)
 
 
 # --- 3. Action (Composio) -------------------------------------------------
 
-def _do_composio_action(message: str, user: User, db: Session) -> str:
+def _do_composio_action(message: str, user: User, db: Session, room_id: str = None) -> dict:
     client = get_openai_client()
     composio = get_composio_client()
     if not client:
-        return "OpenAI not configured."
+        return _cost_result("OpenAI not configured.")
     if not composio:
-        return "Composio not configured. Set COMPOSIO_API_KEY in .env."
+        return _cost_result("Composio not configured. Set COMPOSIO_API_KEY in .env.")
 
     tools = get_composio_tools()
     if not tools:
-        return "No Composio tools available. Check your connected apps."
+        return _cost_result("No Composio tools available. Check your connected apps.")
+
+    total_tokens = 0
+    total_cost = 0.0
+
+    # Build room context for better email/action targeting
+    room_context = ""
+    if room_id:
+        # Get room info
+        room = db.query(Room).filter(Room.id == room_id).first()
+        # Get room members with emails
+        members = (
+            db.query(User)
+            .join(RoomMember, RoomMember.user_id == User.id)
+            .filter(RoomMember.room_id == room_id)
+            .all()
+        )
+        member_list = ", ".join(f"{m.name} ({m.email})" for m in members)
+        # Get recent room messages for conversation context
+        room_msgs = (
+            db.query(Message)
+            .filter(Message.room_id == room_id)
+            .order_by(Message.created_at.desc())
+            .limit(30)
+            .all()
+        )[::-1]
+        convo_lines = []
+        for rm in room_msgs:
+            ts = rm.created_at.strftime("%Y-%m-%d %H:%M") if rm.created_at else ""
+            convo_lines.append(f"[{ts}] {rm.sender_name}: {rm.content[:200]}")
+        convo_text = "\n".join(convo_lines)
+        room_context = (
+            f"\n\nCONTEXT -- You are in room '{room.name if room else 'Unknown'}'.\n"
+            f"Room members: {member_list}\n"
+            f"Recent conversation:\n{convo_text}\n\n"
+            f"When the user asks to email room members or send a summary, use the REAL email addresses listed above. "
+            f"Do NOT use placeholder emails like requester@example.com. "
+            f"When summarizing conversations, use the actual conversation content above."
+        )
 
     tool_names = []
     for t in tools:
@@ -557,13 +675,22 @@ def _do_composio_action(message: str, user: User, db: Session) -> str:
             tool_names.append(t.function.name)
     logger.info(f"[composio] {len(tools)} tools loaded: {tool_names[:10]}...")
 
-    history = (
-        db.query(Message)
-        .filter(Message.user_id == user.id)
-        .order_by(Message.created_at.desc())
-        .limit(10)
-        .all()
-    )[::-1]
+    if room_id:
+        history = (
+            db.query(Message)
+            .filter(Message.room_id == room_id)
+            .order_by(Message.created_at.desc())
+            .limit(10)
+            .all()
+        )[::-1]
+    else:
+        history = (
+            db.query(Message)
+            .filter(Message.user_id == user.id)
+            .order_by(Message.created_at.desc())
+            .limit(10)
+            .all()
+        )[::-1]
 
     system_prompt = (
         "You are Orq, an action executor with access to real app integrations.\n"
@@ -578,7 +705,7 @@ def _do_composio_action(message: str, user: User, db: Session) -> str:
         "Only use the draft tool when the user explicitly asks for a draft.\n\n"
         "When composing email body content, write a complete, natural message.\n"
         "Always call a tool -- do not just describe what you would do."
-    )
+    ) + room_context
 
     messages = [{"role": "system", "content": system_prompt}]
     for m in history[-6:]:
@@ -588,10 +715,13 @@ def _do_composio_action(message: str, user: User, db: Session) -> str:
     resp = client.chat.completions.create(
         model=OPENAI_MODEL, messages=messages, tools=tools, tool_choice="required",
     )
+    ci = _calc_cost(resp.usage)
+    total_tokens += ci["tokens"]
+    total_cost += ci["cost"]
     assistant_msg = resp.choices[0].message
 
     if not assistant_msg.tool_calls:
-        return assistant_msg.content or "No action was needed for this request."
+        return _cost_result(assistant_msg.content or "No action was needed for this request.", total_tokens, total_cost)
 
     results = []
     for tc in assistant_msg.tool_calls:
@@ -621,18 +751,24 @@ def _do_composio_action(message: str, user: User, db: Session) -> str:
         "The tool has already executed -- just confirm the result clearly."
     )})
     summary_resp = client.chat.completions.create(model=OPENAI_MODEL, messages=messages)
-    return summary_resp.choices[0].message.content
+    ci2 = _calc_cost(summary_resp.usage)
+    total_tokens += ci2["tokens"]
+    total_cost += ci2["cost"]
+    return _cost_result(summary_resp.choices[0].message.content, total_tokens, total_cost)
 
 
 # --- 4. Data (Snowflake + Cortex AI) --------------------------------------
 
-def _do_snowflake_query(message: str, user: User, db: Session) -> str:
+def _do_snowflake_query(message: str, user: User, db: Session, room_id: str = None) -> dict:
     client = get_openai_client()
     conn = get_snowflake_connection()
     if not client:
-        return "OpenAI not configured."
+        return _cost_result("OpenAI not configured.")
     if not conn:
-        return "Snowflake not configured. Set SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD in .env."
+        return _cost_result("Snowflake not configured. Set SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD in .env.")
+
+    total_tokens = 0
+    total_cost = 0.0
 
     classify_resp = client.chat.completions.create(
         model=OPENAI_MODEL,
@@ -649,6 +785,9 @@ def _do_snowflake_query(message: str, user: User, db: Session) -> str:
             {"role": "user", "content": message},
         ],
     )
+    ci = _calc_cost(classify_resp.usage)
+    total_tokens += ci["tokens"]
+    total_cost += ci["cost"]
     operation = classify_resp.choices[0].message.content.strip().upper()
     logger.info(f"[snowflake] classified as: {operation}")
 
@@ -657,16 +796,18 @@ def _do_snowflake_query(message: str, user: User, db: Session) -> str:
 
         if "SENTIMENT" in operation:
             text = _extract_text_for_cortex(client, message, "sentiment analysis")
+            total_tokens += 200; total_cost += 200 / 1000 * _COST_PER_1K_OUTPUT  # extract call estimate
             sql = f"SELECT SNOWFLAKE.CORTEX.SENTIMENT('{_escape_sql(text)}')"
             cur.execute(sql)
             score = cur.fetchone()[0]
             cur.close()
             sentiment = "positive" if float(score) > 0.1 else "negative" if float(score) < -0.1 else "neutral"
-            return (
+            return _cost_result(
                 f"**Sentiment Analysis**\n\n"
                 f"Text: \"{text[:200]}{'...' if len(text) > 200 else ''}\"\n\n"
                 f"Score: `{score}` ({sentiment})\n\n"
-                f"_Scale: -1.0 (very negative) to +1.0 (very positive)_"
+                f"_Scale: -1.0 (very negative) to +1.0 (very positive)_",
+                total_tokens, total_cost,
             )
 
         elif "TRANSLATE" in operation:
@@ -681,6 +822,9 @@ def _do_snowflake_query(message: str, user: User, db: Session) -> str:
                     {"role": "user", "content": message},
                 ],
             )
+            ci2 = _calc_cost(extract_resp.usage)
+            total_tokens += ci2["tokens"]
+            total_cost += ci2["cost"]
             parsed = _safe_json(extract_resp.choices[0].message.content)
             text = parsed.get("text", message)
             lang = parsed.get("target_lang", "en")
@@ -688,19 +832,21 @@ def _do_snowflake_query(message: str, user: User, db: Session) -> str:
             cur.execute(sql)
             translated = cur.fetchone()[0]
             cur.close()
-            return (
+            return _cost_result(
                 f"**Translation** (-> {lang})\n\n"
                 f"Original: \"{text[:300]}\"\n\n"
-                f"Translated: \"{translated}\""
+                f"Translated: \"{translated}\"",
+                total_tokens, total_cost,
             )
 
         elif "SUMMARIZE" in operation:
             text = _extract_text_for_cortex(client, message, "summarization")
+            total_tokens += 200; total_cost += 200 / 1000 * _COST_PER_1K_OUTPUT
             sql = f"SELECT SNOWFLAKE.CORTEX.SUMMARIZE('{_escape_sql(text)}')"
             cur.execute(sql)
             summary = cur.fetchone()[0]
             cur.close()
-            return f"**Summary**\n\n{summary}"
+            return _cost_result(f"**Summary**\n\n{summary}", total_tokens, total_cost)
 
         else:
             sql_resp = client.chat.completions.create(
@@ -716,6 +862,9 @@ def _do_snowflake_query(message: str, user: User, db: Session) -> str:
                     {"role": "user", "content": message},
                 ],
             )
+            ci3 = _calc_cost(sql_resp.usage)
+            total_tokens += ci3["tokens"]
+            total_cost += ci3["cost"]
             sql = sql_resp.choices[0].message.content.strip().strip("`").strip()
             logger.info(f"[snowflake] executing SQL: {sql[:200]}")
             cur.execute(sql)
@@ -723,16 +872,16 @@ def _do_snowflake_query(message: str, user: User, db: Session) -> str:
             cols = [desc[0] for desc in cur.description] if cur.description else []
             cur.close()
             if not rows:
-                return f"Query returned no results.\n\n`{sql}`"
+                return _cost_result(f"Query returned no results.\n\n`{sql}`", total_tokens, total_cost)
             header = " | ".join(cols)
             lines = [header, "-" * len(header)]
             for row in rows:
                 lines.append(" | ".join(str(v) for v in row))
             table = "\n".join(lines)
-            return f"```\n{table}\n```\n\nSQL: `{sql}`"
+            return _cost_result(f"```\n{table}\n```\n\nSQL: `{sql}`", total_tokens, total_cost)
 
     except Exception as e:
-        return f"Snowflake error: {e}"
+        return _cost_result(f"Snowflake error: {e}", total_tokens, total_cost)
 
 
 def _extract_text_for_cortex(client, message: str, task: str) -> str:
@@ -766,12 +915,15 @@ def _safe_json(text: str) -> dict:
 
 # --- 5. Pay (Skyfire) -----------------------------------------------------
 
-def _do_skyfire_payment(message: str, user: User, db: Session) -> str:
+def _do_skyfire_payment(message: str, user: User, db: Session, room_id: str = None) -> dict:
     if not SKYFIRE_API_KEY:
-        return "Skyfire not configured. Set SKYFIRE_API_KEY in .env."
+        return _cost_result("Skyfire not configured. Set SKYFIRE_API_KEY in .env.")
     client = get_openai_client()
     if not client:
-        return "OpenAI not configured."
+        return _cost_result("OpenAI not configured.")
+
+    total_tokens = 0
+    total_cost = 0.0
 
     classify_resp = client.chat.completions.create(
         model=OPENAI_MODEL,
@@ -789,6 +941,9 @@ def _do_skyfire_payment(message: str, user: User, db: Session) -> str:
             {"role": "user", "content": message},
         ],
     )
+    ci = _calc_cost(classify_resp.usage)
+    total_tokens += ci["tokens"]
+    total_cost += ci["cost"]
     operation = classify_resp.choices[0].message.content.strip().upper()
     logger.info(f"[skyfire] classified as: {operation}")
 
@@ -801,12 +956,13 @@ def _do_skyfire_payment(message: str, user: User, db: Session) -> str:
             health = health_resp.json() if health_resp.ok else {"error": health_resp.status_code}
             tokens = tokens_resp.json() if tokens_resp.ok else {"error": tokens_resp.status_code}
             token_list = tokens.get("data", [])
-            return (
+            return _cost_result(
                 f"**Skyfire Account Status**\n\n"
                 f"Health: {'Connected' if health.get('ok') else 'Error'}\n"
                 f"Active Tokens: {len(token_list)}\n\n"
                 + ("```json\n" + json.dumps(token_list[:5], indent=2, default=str) + "\n```"
-                   if token_list else "_No active payment tokens._")
+                   if token_list else "_No active payment tokens._"),
+                total_tokens, total_cost,
             )
 
         elif "LLM_PROXY" in operation:
@@ -838,8 +994,11 @@ def _do_skyfire_payment(message: str, user: User, db: Session) -> str:
                 data = proxy_resp.json()
                 answer = data.get("choices", [{}])[0].get("message", {}).get("content", "No response")
                 usage = data.get("usage", {})
+                proxy_tokens = usage.get("total_tokens", 0)
+                total_tokens += proxy_tokens
+                total_cost += proxy_tokens / 1000 * _COST_PER_1K_OUTPUT
                 payment_info = f"\n\n_Tokens used: {usage.get('total_tokens', 'N/A')} | Paid via Skyfire_" if usage else ""
-                return f"**Skyfire AI Response**\n\n{answer}{payment_info}"
+                return _cost_result(f"**Skyfire AI Response**\n\n{answer}{payment_info}", total_tokens, total_cost)
 
             fallback = client.chat.completions.create(
                 model=OPENAI_MODEL,
@@ -848,9 +1007,13 @@ def _do_skyfire_payment(message: str, user: User, db: Session) -> str:
                     {"role": "user", "content": message},
                 ],
             )
-            return (
+            ci2 = _calc_cost(fallback.usage)
+            total_tokens += ci2["tokens"]
+            total_cost += ci2["cost"]
+            return _cost_result(
                 f"**Skyfire AI Response** _(via OpenAI fallback)_\n\n{fallback.choices[0].message.content}\n\n"
-                f"_Note: Skyfire LLM proxy requires funded wallet. Response served via direct OpenAI as fallback._"
+                f"_Note: Skyfire LLM proxy requires funded wallet. Response served via direct OpenAI as fallback._",
+                total_tokens, total_cost,
             )
 
         elif "TOKEN" in operation:
@@ -860,11 +1023,12 @@ def _do_skyfire_payment(message: str, user: User, db: Session) -> str:
                 timeout=10,
             )
             if token_resp.ok:
-                return f"**Skyfire Token Created**\n\n```json\n{json.dumps(token_resp.json(), indent=2, default=str)}\n```"
-            return (
+                return _cost_result(f"**Skyfire Token Created**\n\n```json\n{json.dumps(token_resp.json(), indent=2, default=str)}\n```", total_tokens, total_cost)
+            return _cost_result(
                 f"**Skyfire Token Request**\n\nType: `pay`\nAmount: `0.10 USDC`\nSeller: `openrouter.ai`\n\n"
                 f"Status: {token_resp.status_code} -- {token_resp.json().get('message', token_resp.text[:200])}\n\n"
-                f"_Token creation requires a funded Skyfire wallet. Visit [skyfire.xyz](https://skyfire.xyz) to add funds._"
+                f"_Token creation requires a funded Skyfire wallet. Visit [skyfire.xyz](https://skyfire.xyz) to add funds._",
+                total_tokens, total_cost,
             )
 
         elif "PAY" in operation:
@@ -880,6 +1044,9 @@ def _do_skyfire_payment(message: str, user: User, db: Session) -> str:
                     {"role": "user", "content": message},
                 ],
             )
+            ci3 = _calc_cost(parse_resp.usage)
+            total_tokens += ci3["tokens"]
+            total_cost += ci3["cost"]
             pay_intent = _safe_json(parse_resp.choices[0].message.content)
             pay_resp = requests.post(
                 f"{SKYFIRE_BASE_URL}/api/v1/tokens", headers=sf_headers,
@@ -891,33 +1058,35 @@ def _do_skyfire_payment(message: str, user: User, db: Session) -> str:
                 timeout=15,
             )
             if pay_resp.ok:
-                return f"**Payment Token Created**\n\n{json.dumps(pay_resp.json(), indent=2, default=str)}"
-            return (
+                return _cost_result(f"**Payment Token Created**\n\n{json.dumps(pay_resp.json(), indent=2, default=str)}", total_tokens, total_cost)
+            return _cost_result(
                 f"**Payment Intent**\n\n"
                 f"Amount: **{pay_intent.get('amount', 'N/A')} {pay_intent.get('currency', 'USD')}**\n"
                 f"Recipient: {pay_intent.get('recipient', 'N/A')}\n"
                 f"Description: {pay_intent.get('description', 'N/A')}\n\n"
                 f"_Payment processed through Skyfire's token protocol. "
-                f"Full transaction requires wallet funding at [skyfire.xyz](https://skyfire.xyz)._"
+                f"Full transaction requires wallet funding at [skyfire.xyz](https://skyfire.xyz)._",
+                total_tokens, total_cost,
             )
 
         else:
             health_resp = requests.get(f"{SKYFIRE_BASE_URL}/v1/health", headers=sf_headers, timeout=5)
             status = "Connected" if health_resp.ok and health_resp.json().get("ok") else "Unavailable"
-            return (
+            return _cost_result(
                 f"**Skyfire** -- AI-Native Payment Protocol\n\nStatus: **{status}**\n\n"
                 f"Skyfire enables:\n"
                 f"- **Pay-per-query AI**: Route LLM calls through Skyfire's proxy\n"
                 f"- **Payment tokens**: Programmable payment sessions (`kya`, `pay`, `kya+pay`)\n"
                 f"- **Agent payments**: AI agents transact autonomously within set limits\n"
                 f"- **Escrow & settlement**: USDC-based micro-payments\n\n"
-                f"Try: \"Check my Skyfire balance\", \"Ask Skyfire AI: ...\", \"Create a payment token\""
+                f"Try: \"Check my Skyfire balance\", \"Ask Skyfire AI: ...\", \"Create a payment token\"",
+                total_tokens, total_cost,
             )
 
     except requests.exceptions.Timeout:
-        return "Skyfire request timed out. The service may be temporarily unavailable."
+        return _cost_result("Skyfire request timed out. The service may be temporarily unavailable.", total_tokens, total_cost)
     except Exception as e:
-        return f"Skyfire error: {e}"
+        return _cost_result(f"Skyfire error: {e}", total_tokens, total_cost)
 
 
 # ---------------------------------------------------------------------------
@@ -997,7 +1166,8 @@ def chat(body: ChatBody, user: User = Depends(get_current_user), db: Session = D
     handlers = {"chat": _do_chat, "crew": _do_crew, "action": _do_composio_action, "data": _do_snowflake_query, "pay": _do_skyfire_payment}
     handler = handlers.get(body.mode, _do_chat)
     try:
-        reply = handler(body.message, user, db)
+        result = handler(body.message, user, db, None)
+        reply = result.get("reply", str(result)) if isinstance(result, dict) else str(result)
     except Exception as e:
         logger.error(f"[{body.mode}] {e}")
         reply = f"Error in {body.mode} mode: {e}"

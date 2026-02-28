@@ -27,10 +27,10 @@ for name, email in [("Sean", "sean@orq.dev"), ("Yug", "yug@orq.dev")]:
 sean_id, yug_id = user_ids[0], user_ids[1]
 
 rooms = [
-    {"name": "Orq Team",          "icon": "\U0001f3e2",       "description": "Whole team workspace",               "github_repo": "SeanAminov/Orq", "members": [sean_id, yug_id]},
-    {"name": "Sean & Yug",        "icon": "\U0001f465",       "description": "Duo collaboration room",             "github_repo": None,             "members": [sean_id, yug_id]},
-    {"name": "Sean's Workspace",  "icon": "\U0001f4a1",       "description": "Sean's personal workspace",          "github_repo": None,             "members": [sean_id]},
-    {"name": "Yug's Workspace",   "icon": "\U0001f3af",       "description": "Yug's personal workspace",           "github_repo": None,             "members": [yug_id]},
+    {"name": "Orq Team",          "icon": "O", "description": "Team workspace",                    "github_repo": "SeanAminov/Orq", "members": [sean_id, yug_id]},
+    {"name": "Sean & Yug",        "icon": "S", "description": "Duo collaboration",                 "github_repo": None,             "members": [sean_id, yug_id]},
+    {"name": "Sean's Workspace",  "icon": "S", "description": "Sean's personal workspace",          "github_repo": None,             "members": [sean_id]},
+    {"name": "Yug's Workspace",   "icon": "Y", "description": "Yug's personal workspace",           "github_repo": None,             "members": [yug_id]},
 ]
 
 for room_info in rooms:

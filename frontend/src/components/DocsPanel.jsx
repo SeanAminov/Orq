@@ -5,236 +5,142 @@ const SECTIONS = [
   {
     id: "overview",
     title: "Overview",
-    icon: "\u{1F30D}",
     content: `
-# What is Orq?
+# Orq
 
-Orq is an **agentic AI workspace** that connects multiple AI services into one room-based interface. Instead of switching between tools, you type \`@\` in any room and Orq routes your request to the right system.
+Orq is an agentic AI workspace that unifies multiple AI services into a room-based interface. Type \`@\` in any room to route requests to the appropriate system.
 
-**Four sponsor integrations power everything:**
+## Integrations
 
-| Integration | What It Does | Trigger |
-|------------|-------------|---------|
-| **CrewAI** | Multi-agent orchestration -- AI agents collaborate on complex tasks | \`@crew\` or \`@orq\` |
-| **Composio** | Connects to your real Gmail, Google Docs, and Google Drive via OAuth | \`@action\` or \`@orq\` |
-| **Snowflake Cortex** | NLP functions -- sentiment analysis, translation, and summarization | \`@data\` or \`@orq\` |
-| **Skyfire** | AI-native payment protocol -- pay-per-query LLM access and tokens | \`@pay\` or \`@orq\` |
+| Service | Capability | Trigger |
+|---------|-----------|---------|
+| **CrewAI** | Multi-agent orchestration | \`@crew\` |
+| **Composio** | Gmail, Google Docs, Drive (OAuth) | \`@action\` |
+| **Snowflake Cortex** | Sentiment, translation, summarization | \`@data\` |
+| **Skyfire** | Pay-per-query LLM access, payment tokens | \`@pay\` |
 
-**How it works:** Create rooms for different contexts (personal, team, projects). In any room, type \`@\` to see AI commands. Use \`@orq\` for auto-detection or specific triggers like \`@crew\`, \`@action\`, \`@data\`, \`@pay\` for direct routing.
-
-**Team features:** Every AI action is logged to a shared Activity panel. All room members can see what everyone is working on.
+Use \`@orq\` for automatic intent detection, or specific triggers for direct routing. All agent activity is logged to a shared Activity panel visible to room members.
 `,
   },
   {
-    id: "chat",
-    title: "Chat",
-    icon: "\u{1F4AC}",
+    id: "commands",
+    title: "Commands",
     content: `
-# Chat
+# Commands
 
-The simplest way to use Orq. Type a plain message (no @ mention) to chat with your team, or use \`@orq\` with a general question for AI help.
-
-**What it does:** General-purpose AI assistant powered by OpenAI (GPT-4.1-mini) with conversation context.
-
-**Example prompts:**
-- \`@orq What is agentic AI?\`
-- \`@orq Explain multi-agent systems in simple terms\`
-- \`@orq Help me draft a project proposal\`
-- \`@orq Summarize the key differences between RAG and fine-tuning\`
-
-**Tip:** Plain messages (without @) are team messages visible to all room members. Messages with @ triggers are processed by AI.
-
-**Response time:** 2-5 seconds.
-`,
-  },
-  {
-    id: "crew",
-    title: "@crew",
-    icon: "\u{1F916}",
-    content: `
-# @crew (CrewAI)
-
-Launches a **team of AI agents** that collaborate step-by-step on your task.
-
-**Default crew (3 agents):**
-1. **Researcher** -- gathers information (has Snowflake Cortex + email access)
-2. **Planner** -- creates a structured action plan
-3. **Executor** -- carries out the plan (has Cortex + Composio tools)
-
-**Smart routing:** Certain phrases auto-trigger specialized crews:
-
-| Trigger Phrase | Specialized Crew | Agents |
-|---------------|-----------------|--------|
-| "commit digest for owner/repo" | Commit Digest | 3 agents (Git, Summary, Action) |
-| "research candidate username" | Candidate Research | 5 agents (full pipeline) |
-
-**Example prompts:**
-- \`@crew Research the latest trends in agentic AI and create a brief\`
-- \`@crew Generate a commit digest for SeanAminov/Orq from the last 30 days\`
-- \`@crew Research candidate SeanAminov for Full-Stack AI Engineer role\`
-- \`@crew Analyze my recent emails and suggest follow-up actions\`
-
-**How accurate do I need to be?** Fairly natural. For commit digest, include the repo in \`owner/repo\` format. For candidate research, include the GitHub username.
-
-**Response time:** 15-90 seconds depending on complexity.
-`,
-  },
-  {
-    id: "action",
-    title: "@action",
-    icon: "\u{1F517}",
-    content: `
-# @action (Composio)
-
-Executes **real actions** on your connected Google accounts (Gmail, Docs, Drive).
-
-**Connected apps:** Gmail, Google Docs, Google Drive (via Composio OAuth).
-
-**Available actions:**
-
-| Action | Example Prompt | What Happens |
-|--------|---------------|-------------|
-| **Send email** | \`@action Send an email to john@gmail.com about the project update\` | Actually sends a real email |
-| **Draft email** | \`@action Draft an email to team@company.com, don't send it yet\` | Creates a draft in Gmail |
-| **Read emails** | \`@action Check my latest emails\` | Fetches your 5 most recent emails |
-| **Create doc** | \`@action Create a Google Doc called Meeting Notes\` | Creates a real Google Doc |
-| **List files** | \`@action List my Google Drive files\` | Shows your recent Drive files |
-
-**Tips:**
-- Say **"send"** to actually send, **"draft"** to save as draft only
-- Include the recipient email and a topic -- the AI writes the body
-- GitHub is NOT connected via Composio (uses public API directly)
-
-**Response time:** 3-8 seconds.
-`,
-  },
-  {
-    id: "data",
-    title: "@data",
-    icon: "\u{2744}\u{FE0F}",
-    content: `
-# @data (Snowflake Cortex AI)
-
-Three NLP capabilities powered by Snowflake's Cortex AI engine.
-
-**Capabilities:**
-
-| Function | What It Does | Example |
-|----------|-------------|---------|
-| **Sentiment** | Scores text from -1 (negative) to +1 (positive) | \`@data Analyze sentiment: I love this product!\` |
-| **Translate** | Translates text to any language | \`@data Translate to Japanese: Hello, how are you?\` |
-| **Summarize** | Condenses long text into key points | \`@data Summarize: [paste a long paragraph]\` |
-
-**Shortcut:** You can also use \`@summary\` to go directly to Cortex summarization.
-
-**How accurate do I need to be?** The AI classifier is flexible. Include keywords like "sentiment", "translate to [language]", or "summarize".
-
-**Response time:** 2-4 seconds. These are Snowflake SQL calls under the hood.
-`,
-  },
-  {
-    id: "pay",
-    title: "@pay",
-    icon: "\u{1F4B8}",
-    content: `
-# @pay (Skyfire)
-
-Skyfire is an **AI-native payment protocol** for pay-per-query AI and programmable payment tokens.
-
-**What you can do:**
-
-| Command | Example | What Happens |
+| Trigger | Service | Description |
 |---------|---------|-------------|
-| **Status** | \`@pay What is Skyfire?\` | Shows connection status |
-| **Balance** | \`@pay Check my balance\` | Queries active token count |
-| **AI query** | \`@pay Ask Skyfire AI: explain quantum computing\` | Routes through Skyfire LLM proxy |
-| **Payment** | \`@pay Pay $5 to example.com for API access\` | Parses payment intent |
+| \`@orq\` | Auto-detect | Routes to the appropriate handler based on message content |
+| \`@crew\` | CrewAI | Launches multi-agent teams for complex tasks |
+| \`@action\` | Composio | Executes Gmail, Google Docs, or Drive actions |
+| \`@data\` | Snowflake | Runs sentiment analysis, translation, or summarization |
+| \`@pay\` | Skyfire | Checks balance, creates tokens, or routes through LLM proxy |
+| \`@summary\` | Cortex | Shortcut for text summarization |
 
-**Current limitation:** The Skyfire wallet needs funding for the LLM proxy to fully work. Without funds, AI queries gracefully fall back to OpenAI.
+## Specialized Crews
 
-**Response time:** 2-5 seconds.
+Certain phrases trigger specialized CrewAI pipelines:
+
+- **Candidate research**: \`@crew research candidate [username] for [role]\` — 5-agent pipeline analyzing GitHub profiles
+- **Commit digest**: \`@crew commit digest for [owner/repo]\` — 3-agent pipeline summarizing recent commits
 `,
   },
   {
-    id: "runs",
-    title: "Workflows",
-    icon: "\u{1F680}",
+    id: "integrations",
+    title: "Integrations",
     content: `
-# Workflows (Advanced Pipelines)
+# Integration Details
 
-The Workflows tab in the Activity panel provides a **form-based UI** for long-running multi-agent pipelines.
+## CrewAI
 
-## Candidate Research
+Default crew consists of three agents: Researcher, Planner, and Executor. Each agent has access to Snowflake Cortex NLP functions and Composio integrations. Response time: 15-90 seconds.
 
-Analyzes a GitHub user's public profile and produces a structured research brief.
+## Composio (OAuth)
 
-**Fields:** GitHub Username, Target Role, Candidate Name, Company Context, Generate Outreach (checkbox).
+Connected apps: Gmail, Google Docs, Google Drive. Actions include sending emails, creating drafts, reading inbox, creating documents, and listing files. Response time: 3-8 seconds.
 
-**5 CrewAI agents work together:** Planner, GitHub Analyst, Technical Analyzer (with Cortex NLP), Role Mapper, Brief Writer.
+## Snowflake Cortex
 
-**Response time:** 60-90 seconds.
+Three NLP functions:
+- **Sentiment**: Scores text from -1.0 to +1.0
+- **Translate**: Supports en, es, fr, de, ja, ko, zh, pt, it, ru
+- **Summarize**: Condenses text into key points
 
----
+Response time: 2-4 seconds.
 
-## Commit Digest
+## Skyfire
 
-Fetches real commits from any public GitHub repo and produces a feature-grouped digest.
-
-**Fields:**
-- **Repository** (required) -- in \`owner/repo\` format, e.g. \`SeanAminov/Orq\`
-- **Days** -- how far back to look (default: 7)
-- **Author filter** and **Path filter** (optional)
-
-**3 CrewAI agents work together:** Git Agent, Summary Agent (with Cortex), Action Agent.
-
-**Response time:** 10-20 seconds.
+AI-native payment protocol. Features include wallet balance queries, pay-per-query LLM proxy (via OpenRouter), programmable payment tokens, and USDC-based micro-payments. Requires a funded wallet for full proxy functionality.
 `,
   },
   {
-    id: "team",
-    title: "Team & Rooms",
-    icon: "\u{1F465}",
+    id: "architecture",
+    title: "Architecture",
     content: `
-# Team & Rooms
+# Architecture
 
-## Room Types
-- **Orq Team** -- shared by the whole team, everyone sees messages and AI activity
-- **Sean & Yug** -- duo collaboration room
-- **Personal Workspaces** -- private to each user
-- **Custom Rooms** -- create with "+ New Room" and invite specific members
+## Stack
 
-## How Rooms Work
-- Messages in a room are visible to **all room members**
-- AI responses appear in the room where the @ command was sent
-- The Activity panel shows agent runs for the current room
-- Each room has its own message history
+- **Backend**: FastAPI + SQLAlchemy (SQLite)
+- **Frontend**: React 19 + Vite
+- **Auth**: JWT cookie-based authentication
 
-## @ Commands
-Type \`@\` in any room to see the autocomplete menu:
+## Room Model
 
-| Trigger | What It Does |
-|---------|-------------|
-| \`@orq\` | AI auto-detects intent |
-| \`@crew\` | CrewAI multi-agent task |
-| \`@action\` | Composio (Gmail, Docs, Drive) |
-| \`@data\` | Snowflake Cortex NLP |
-| \`@pay\` | Skyfire payments |
-| \`@summary\` | Quick summarization |
+Rooms provide isolated workspaces with member-scoped visibility. Each room maintains its own message history and agent run log. Messages from all members are visible to all participants.
 
-## Accounts
-| User | Email | Password |
-|------|-------|----------|
-| Sean | sean@orq.dev | pass |
-| Yug | yug@orq.dev | pass |
+## Intent Routing
 
-Both accounts share the same Composio integrations (Gmail, Docs, Drive).
+When a user sends a message with an \`@\` trigger, the backend either uses the hint directly or classifies intent via OpenAI. The message is then routed to the appropriate handler:
+
+1. Intent classification (or direct hint)
+2. Handler execution (Chat, Crew, Action, Data, Pay)
+3. Cost tracking and room budget accumulation
+4. Response stored as assistant message in room
+
+## Cost Tracking
+
+Every agent run records token usage and estimated cost. Costs accumulate on the room's budget counter, visible in the sidebar.
+`,
+  },
+  {
+    id: "api",
+    title: "API",
+    content: `
+# API Reference
+
+## Authentication
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| \`/api/auth/login\` | POST | Login with email/password |
+| \`/api/auth/signup\` | POST | Create new account |
+| \`/api/auth/logout\` | POST | Clear session |
+| \`/api/auth/me\` | GET | Current user info |
+
+## Rooms
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| \`/api/rooms\` | GET | List user's rooms |
+| \`/api/rooms\` | POST | Create room |
+| \`/api/rooms/:id/messages\` | GET | Room messages |
+| \`/api/rooms/:id/messages\` | POST | Send message |
+| \`/api/rooms/:id/run\` | POST | Trigger AI agent |
+| \`/api/rooms/:id/runs\` | GET | Agent run history |
+
+## Workflows
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| \`/api/runs/candidate-research\` | POST | Run candidate pipeline |
+| \`/api/runs/commit-digest\` | POST | Run commit digest |
 `,
   },
 ];
 
 export default function DocsPanel() {
   const [activeSection, setActiveSection] = useState("overview");
-
   const section = SECTIONS.find((s) => s.id === activeSection);
 
   return (
@@ -246,7 +152,7 @@ export default function DocsPanel() {
             className={`docs-nav-item ${activeSection === s.id ? "active" : ""}`}
             onClick={() => setActiveSection(s.id)}
           >
-            <span>{s.icon}</span> {s.title}
+            {s.title}
           </button>
         ))}
       </div>
