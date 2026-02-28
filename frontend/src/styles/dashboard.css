@@ -21,13 +21,14 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 1px 0 8px rgba(0, 0, 0, 0.05);
 }
 
 .rs-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px 12px;
+  padding: 18px 16px 14px;
   border-bottom: 1px solid var(--border);
 }
 .rs-logo {
@@ -107,13 +108,13 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  border-radius: var(--radius);
   border: none;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s ease;
   text-align: left;
   margin-bottom: 2px;
 }
@@ -280,25 +281,27 @@
   text-align: left;
 }
 .cp-example {
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   font-size: 0.78rem;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s ease;
 }
 .cp-example:hover {
   border-color: var(--accent);
   color: var(--text-primary);
+  background: var(--accent-light);
+  transform: translateY(-1px);
 }
 
-/* Chat bubbles (reused from before) */
+/* Chat bubbles */
 .chat-bubble {
   max-width: 75%;
-  padding: 10px 14px;
-  border-radius: var(--radius);
+  padding: 10px 16px;
+  border-radius: var(--radius-lg);
   word-wrap: break-word;
 }
 .chat-bubble.own {
@@ -306,16 +309,19 @@
   background: var(--accent);
   color: #fff;
   white-space: pre-wrap;
+  border-bottom-right-radius: 4px;
 }
 .chat-bubble.other {
   align-self: flex-start;
   background: var(--bg-card);
   border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
 }
 .chat-bubble.assistant {
   align-self: flex-start;
   background: var(--bg-card);
   border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
 }
 .chat-sender {
   display: block;
@@ -435,15 +441,16 @@
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
+  border-radius: var(--radius);
+  padding: 11px 16px;
   font-size: 0.9rem;
   color: var(--text-primary);
   outline: none;
-  transition: border 0.2s;
+  transition: border 0.2s, box-shadow 0.2s;
 }
 .cp-input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
 }
 .cp-input.orq-active {
   border-color: var(--accent);
@@ -454,7 +461,7 @@
   color: var(--text-secondary);
   border: 1px solid var(--border);
   padding: 10px 20px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
@@ -483,22 +490,22 @@
   right: 20px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
   max-height: 260px;
   overflow-y: auto;
   z-index: 50;
-  padding: 4px;
-  margin-bottom: 4px;
+  padding: 6px;
+  margin-bottom: 6px;
 }
 .mention-option {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  border-radius: var(--radius);
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background 0.15s;
 }
 .mention-option:hover,
 .mention-option.active {
@@ -527,6 +534,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: -1px 0 8px rgba(0, 0, 0, 0.05);
 }
 
 .ap-tabs {
@@ -580,13 +588,17 @@
 .ap-runs {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .ap-run-card {
-  padding: 10px;
+  padding: 12px;
   background: var(--bg-card);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   border: 1px solid var(--border);
+  transition: border-color 0.15s;
+}
+.ap-run-card:hover {
+  border-color: var(--accent-light);
 }
 .ap-run-top {
   display: flex;
@@ -779,10 +791,11 @@
 .modal-content {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 28px;
-  width: 400px;
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  width: 420px;
   max-width: 90vw;
+  box-shadow: var(--shadow-md);
 }
 .modal-content h3 {
   font-size: 1.1rem;
@@ -801,18 +814,19 @@
 }
 .modal-field input {
   width: 100%;
-  padding: 9px 12px;
+  padding: 10px 14px;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   font-size: 0.88rem;
   color: var(--text-primary);
   outline: none;
   box-sizing: border-box;
-  transition: border 0.2s;
+  transition: border 0.2s, box-shadow 0.2s;
 }
 .modal-field input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
 }
 
 .modal-actions {
@@ -822,30 +836,32 @@
   margin-top: 20px;
 }
 .modal-cancel {
-  padding: 8px 16px;
+  padding: 9px 18px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-secondary);
   font-size: 0.85rem;
   cursor: pointer;
+  transition: all 0.15s;
 }
 .modal-cancel:hover {
   background: var(--bg-card);
 }
 .modal-create {
-  padding: 8px 20px;
+  padding: 9px 22px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 .modal-create:hover {
   background: var(--accent-hover);
+  transform: translateY(-1px);
 }
 .modal-create:disabled {
   opacity: 0.4;
@@ -936,12 +952,14 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 18px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 .run-type-card:hover {
   border-color: var(--accent);
+  background: var(--accent-light);
+  transform: translateY(-1px);
 }
 .run-type-card strong {
   font-size: 0.92rem;
@@ -979,32 +997,35 @@
 .run-field .required { color: var(--accent); }
 .run-field input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   font-size: 0.85rem;
   color: var(--text-primary);
   outline: none;
   box-sizing: border-box;
-  transition: border 0.2s;
+  transition: border 0.2s, box-shadow 0.2s;
 }
-.run-field input:focus { border-color: var(--accent); }
+.run-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
 
 .btn-run {
   background: var(--accent);
   color: #fff;
   border: none;
-  padding: 10px 24px;
-  border-radius: var(--radius-sm);
+  padding: 11px 24px;
+  border-radius: var(--radius);
   font-weight: 600;
   font-size: 0.88rem;
   cursor: pointer;
   width: 100%;
-  margin-top: 6px;
-  transition: background 0.2s;
+  margin-top: 8px;
+  transition: all 0.2s;
 }
-.btn-run:hover { background: var(--accent-hover); }
+.btn-run:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .run-error {
@@ -1101,9 +1122,9 @@
 .run-content {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
-  margin-bottom: 12px;
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  margin-bottom: 14px;
   max-height: 400px;
   overflow-y: auto;
 }

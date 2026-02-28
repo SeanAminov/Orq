@@ -477,6 +477,42 @@ def _cost_result(reply: str, tokens: int = 0, cost: float = 0.0) -> dict:
     return {"reply": reply, "tokens": tokens, "cost": cost}
 
 # ===========================================================================
+#  SHARED MEMORY -- cross-agent context
+# ===========================================================================
+
+def _get_shared_context(db: Session, room_id: str = None, limit: int = 15) -> str:
+    """
+    Build shared context from recent AgentRun records so all handlers
+    are aware of what other agents have done. This is the 'brain' of the
+    system -- every handler gets this context injected.
+    """
+    if not room_id:
+        return ""
+    runs = (
+        db.query(AgentRun)
+        .filter(AgentRun.room_id == room_id, AgentRun.status == "completed")
+        .order_by(AgentRun.created_at.desc())
+        .limit(limit)
+        .all()
+    )[::-1]
+    if not runs:
+        return ""
+    lines = []
+    for r in runs:
+        ts = r.created_at.strftime("%m/%d %H:%M") if r.created_at else ""
+        summary = (r.summary or "")[:300]
+        if summary:
+            lines.append(f"[{ts}] @{r.intent.lower()} by {r.user_name}: {r.input_text[:100]}\n  Result: {summary}")
+    if not lines:
+        return ""
+    return (
+        "\n\nSHARED MEMORY -- Recent agent activity in this room:\n"
+        + "\n".join(lines[-10:])
+        + "\n\nUse this context to provide continuity. Reference prior results when relevant."
+    )
+
+
+# ===========================================================================
 #  MODE HANDLERS
 # ===========================================================================
 
@@ -502,12 +538,14 @@ def _do_chat(message: str, user: User, db: Session, room_id: str = None) -> dict
             .limit(20)
             .all()
         )[::-1]
+    shared_ctx = _get_shared_context(db, room_id)
     messages = [{"role": "system", "content": (
         "You are Orq, an AI productivity assistant built for agentic workflows. "
         "You help users with tasks, planning, research, data analysis, and actions. "
         "You have access to CrewAI multi-agent crews, Composio app integrations "
         "(Gmail, Google Docs, Google Drive), Snowflake data warehouse with Cortex AI, "
         "and Skyfire payments. Keep responses concise and actionable."
+        + shared_ctx
     )}]
     for m in history:
         messages.append({"role": m.role, "content": m.content})
@@ -525,7 +563,9 @@ def _do_crew(message: str, user: User, db: Session, room_id: str = None) -> dict
     total_cost = 0.0
 
     if any(kw in msg_lower for kw in ["research candidate", "github profile", "evaluate developer",
-                                       "candidate diligence", "technical assessment", "review github"]):
+                                       "candidate diligence", "technical assessment", "review github",
+                                       "check candidate", "analyze candidate", "look at candidate",
+                                       "research github", "github user", "candidate research"]):
         client = get_openai_client()
         if client:
             extract = client.chat.completions.create(
@@ -608,8 +648,10 @@ def _do_crew(message: str, user: User, db: Session, room_id: str = None) -> dict
             .all()
         )[::-1]
     context = "\n".join(f"{m.role}: {m.content}" for m in history)
+    shared_ctx = _get_shared_context(db, room_id)
+    if shared_ctx:
+        context += shared_ctx
     reply = run_crew(message, context)
-    # General crew runs 3 agents; estimate ~6000 tokens
     total_tokens += 6000
     total_cost += 6000 / 1000 * _COST_PER_1K_OUTPUT
     return _cost_result(reply, total_tokens, total_cost)
@@ -692,6 +734,7 @@ def _do_composio_action(message: str, user: User, db: Session, room_id: str = No
             .all()
         )[::-1]
 
+    shared_ctx = _get_shared_context(db, room_id)
     system_prompt = (
         "You are Orq, an action executor with access to real app integrations.\n"
         "Given the user's request, call the appropriate tool to fulfill it.\n\n"
@@ -705,7 +748,7 @@ def _do_composio_action(message: str, user: User, db: Session, room_id: str = No
         "Only use the draft tool when the user explicitly asks for a draft.\n\n"
         "When composing email body content, write a complete, natural message.\n"
         "Always call a tool -- do not just describe what you would do."
-    ) + room_context
+    ) + room_context + shared_ctx
 
     messages = [{"role": "system", "content": system_prompt}]
     for m in history[-6:]:

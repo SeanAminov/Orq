@@ -247,17 +247,21 @@ def _planner() -> Agent:
 
 
 def _executor() -> Agent:
-    """Carries out the plan -- sends emails, creates docs, queries data."""
+    """Carries out the plan -- queries data, creates docs, analyzes results."""
     return Agent(
         role="Executor",
         goal="Execute the plan by taking real-world actions and returning results",
         backstory=(
             "You are a hands-on engineer who takes the planner's steps and "
-            "executes them. You can send emails, create Google Docs, query "
-            "Snowflake databases, and analyze data. Use your tools to get "
-            "real results."
+            "executes them. You can query Snowflake databases, create Google "
+            "Docs, fetch emails for research, and analyze data. Use your tools "
+            "to get real results.\n\n"
+            "IMPORTANT: You must NEVER send emails autonomously. You can only "
+            "fetch/read emails for research. If the plan involves sending emails, "
+            "skip that step and note that email sending requires explicit user "
+            "approval via the @action command."
         ),
-        tools=_cortex_tools + _composio_tools,
+        tools=_cortex_tools + [ComposioFetchEmailsTool(), ComposioCreateDocTool()],
         verbose=CREWAI_VERBOSE,
         allow_delegation=False,
         llm=OPENAI_MODEL,

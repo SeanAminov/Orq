@@ -8,69 +8,160 @@ const SECTIONS = [
     content: `
 # Orq
 
-Orq is an agentic AI workspace that unifies multiple AI services into a room-based interface. Type \`@\` in any room to route requests to the appropriate system.
+Orq is an agentic AI workspace designed for collaborative teams. It combines multi-agent orchestration, real-time integrations, and natural language routing into a single room-based interface.
 
-## Integrations
+## How It Works
 
-| Service | Capability | Trigger |
-|---------|-----------|---------|
-| **CrewAI** | Multi-agent orchestration | \`@crew\` |
-| **Composio** | Gmail, Google Docs, Drive (OAuth) | \`@action\` |
-| **Snowflake Cortex** | Sentiment, translation, summarization | \`@data\` |
-| **Skyfire** | Pay-per-query LLM access, payment tokens | \`@pay\` |
+Type \`@\` in any room to invoke an AI capability. Orq automatically detects your intent and routes the request to the appropriate service. All agent activity, costs, and results are tracked per-room.
 
-Use \`@orq\` for automatic intent detection, or specific triggers for direct routing. All agent activity is logged to a shared Activity panel visible to room members.
+## Key Capabilities
+
+- **Multi-agent crews** that research, plan, and execute complex tasks autonomously
+- **OAuth integrations** with Gmail, Google Docs, and Google Drive via Composio
+- **Enterprise NLP** powered by Snowflake Cortex for sentiment, translation, and summarization
+- **AI-native payments** through Skyfire's pay-per-query protocol
+- **Shared memory** across all agents within a workspace for contextual continuity
+
+## Supported Triggers
+
+| Trigger | Routes To | Use Case |
+|---------|-----------|----------|
+| \`@orq\` | Auto-detect | General requests, Orq picks the right handler |
+| \`@crew\` | CrewAI | Multi-agent pipelines for complex tasks |
+| \`@action\` | Composio | Gmail, Google Docs, Drive operations |
+| \`@data\` | Snowflake Cortex | Sentiment, translation, summarization, SQL |
+| \`@pay\` | Skyfire | Wallet balance, payment tokens, LLM proxy |
+| \`@summary\` | Cortex | Shortcut for text summarization |
 `,
   },
   {
     id: "commands",
     title: "Commands",
     content: `
-# Commands
+# Commands Reference
 
-| Trigger | Service | Description |
-|---------|---------|-------------|
-| \`@orq\` | Auto-detect | Routes to the appropriate handler based on message content |
-| \`@crew\` | CrewAI | Launches multi-agent teams for complex tasks |
-| \`@action\` | Composio | Executes Gmail, Google Docs, or Drive actions |
-| \`@data\` | Snowflake | Runs sentiment analysis, translation, or summarization |
-| \`@pay\` | Skyfire | Checks balance, creates tokens, or routes through LLM proxy |
-| \`@summary\` | Cortex | Shortcut for text summarization |
+## General
 
-## Specialized Crews
+| Command | Description |
+|---------|-------------|
+| \`@orq [message]\` | Auto-routes to the best handler based on intent |
+| \`@orq what can you do?\` | Returns capabilities overview |
 
-Certain phrases trigger specialized CrewAI pipelines:
+## CrewAI Pipelines
 
-- **Candidate research**: \`@crew research candidate [username] for [role]\` — 5-agent pipeline analyzing GitHub profiles
-- **Commit digest**: \`@crew commit digest for [owner/repo]\` — 3-agent pipeline summarizing recent commits
+| Command | Description |
+|---------|-------------|
+| \`@crew [task]\` | Runs a 3-agent crew: Researcher, Planner, Executor |
+| \`@crew research candidate [username] for [role]\` | 5-agent candidate research pipeline |
+| \`@crew commit digest for [owner/repo]\` | 3-agent commit summary pipeline |
+
+### Candidate Research
+
+Analyzes a GitHub profile against a target role. The pipeline:
+1. Plans the research scope
+2. Fetches repositories, languages, commits, and READMEs
+3. Extracts technical signals and evidence
+4. Maps findings to the target role requirements
+5. Generates a structured research brief
+
+Example: \`@crew research candidate torvalds for Backend Engineer\`
+
+### Commit Digest
+
+Summarizes recent commits into a feature-grouped digest.
+
+Example: \`@crew commit digest for SeanAminov/Orq last 14 days\`
+
+## Composio Actions
+
+| Command | Description |
+|---------|-------------|
+| \`@action send email to [email] about [topic]\` | Sends an email via Gmail |
+| \`@action draft email to [email]\` | Creates a Gmail draft |
+| \`@action check my emails\` | Fetches recent inbox messages |
+| \`@action create a doc titled [name]\` | Creates a Google Doc |
+| \`@action list my drive files\` | Lists Google Drive files |
+| \`@action email room members a summary\` | Emails conversation summary to all room members |
+
+## Snowflake Cortex
+
+| Command | Description |
+|---------|-------------|
+| \`@data analyze sentiment of [text]\` | Returns score from -1.0 to +1.0 |
+| \`@data translate [text] to Spanish\` | Supports en, es, fr, de, ja, ko, zh, pt, it, ru |
+| \`@data summarize [text]\` | Condenses text into key points |
+| \`@summary [text]\` | Shortcut for summarization |
+
+## Skyfire Payments
+
+| Command | Description |
+|---------|-------------|
+| \`@pay check balance\` | Shows wallet status and active tokens |
+| \`@pay ask [question]\` | Routes through Skyfire's pay-per-query LLM proxy |
+| \`@pay create token\` | Generates a programmable payment token |
 `,
   },
   {
     id: "integrations",
     title: "Integrations",
     content: `
-# Integration Details
+# Integrations
 
 ## CrewAI
 
-Default crew consists of three agents: Researcher, Planner, and Executor. Each agent has access to Snowflake Cortex NLP functions and Composio integrations. Response time: 15-90 seconds.
+Multi-agent orchestration framework. Orq runs two types of crews:
 
-## Composio (OAuth)
+**General Crew** (3 agents)
+- Researcher: gathers context via Snowflake queries and email fetching
+- Planner: creates structured action plans from research
+- Executor: carries out the plan using available tools
 
-Connected apps: Gmail, Google Docs, Google Drive. Actions include sending emails, creating drafts, reading inbox, creating documents, and listing files. Response time: 3-8 seconds.
+**Candidate Research Crew** (5 agents)
+- Planner: scopes the research
+- GitHub Agent: fetches repos, commits, languages, READMEs
+- Analysis Agent: extracts technical signals with evidence
+- Role Mapping Agent: maps findings to role requirements
+- Summary Agent: produces a structured research brief
+
+Response time: 15-90 seconds depending on complexity.
+
+## Composio
+
+OAuth-based integrations with Google services. Connected apps:
+
+| App | Actions |
+|-----|---------|
+| **Gmail** | Send email, create draft, fetch inbox |
+| **Google Docs** | Create document, write content |
+| **Google Drive** | List files, search |
+
+Room-scoped context: when you say "email room members," Orq automatically resolves member email addresses and includes conversation context.
+
+Response time: 3-8 seconds.
 
 ## Snowflake Cortex
 
-Three NLP functions:
-- **Sentiment**: Scores text from -1.0 to +1.0
-- **Translate**: Supports en, es, fr, de, ja, ko, zh, pt, it, ru
-- **Summarize**: Condenses text into key points
+Enterprise NLP functions running on Snowflake infrastructure:
+
+| Function | Input | Output |
+|----------|-------|--------|
+| **Sentiment** | Any text | Score from -1.0 to +1.0 |
+| **Translate** | Text + target language | Translated text |
+| **Summarize** | Long text | Condensed key points |
+| **SQL** | Natural language query | Query results from Snowflake |
 
 Response time: 2-4 seconds.
 
 ## Skyfire
 
-AI-native payment protocol. Features include wallet balance queries, pay-per-query LLM proxy (via OpenRouter), programmable payment tokens, and USDC-based micro-payments. Requires a funded wallet for full proxy functionality.
+AI-native payment protocol for autonomous agent transactions:
+
+- **Wallet**: USDC-based balance and transaction tracking
+- **LLM Proxy**: Pay-per-query routing through OpenRouter
+- **Payment Tokens**: Programmable sessions (kya, pay, kya+pay)
+- **Escrow**: Micro-payment settlement between agents
+
+Requires a funded Skyfire wallet for full functionality.
 `,
   },
   {
@@ -81,26 +172,45 @@ AI-native payment protocol. Features include wallet balance queries, pay-per-que
 
 ## Stack
 
-- **Backend**: FastAPI + SQLAlchemy (SQLite)
-- **Frontend**: React 19 + Vite
-- **Auth**: JWT cookie-based authentication
+| Layer | Technology |
+|-------|-----------|
+| **Backend** | FastAPI, SQLAlchemy, SQLite |
+| **Frontend** | React 19, Vite, Framer Motion |
+| **Auth** | JWT cookie-based sessions |
+| **AI** | OpenAI GPT-4o-mini, CrewAI, Snowflake Cortex |
+| **Integrations** | Composio (OAuth), Skyfire (Payments) |
 
 ## Room Model
 
-Rooms provide isolated workspaces with member-scoped visibility. Each room maintains its own message history and agent run log. Messages from all members are visible to all participants.
+Rooms are isolated workspaces with member-scoped visibility. Each room maintains:
+- Message history (all members can see all messages)
+- Agent run log with intent, status, and cost
+- Cumulative cost tracking (room budget)
 
 ## Intent Routing
 
-When a user sends a message with an \`@\` trigger, the backend either uses the hint directly or classifies intent via OpenAI. The message is then routed to the appropriate handler:
+1. User sends a message with an \`@\` trigger
+2. If trigger matches a known hint (crew, action, data, pay), route directly
+3. Otherwise, classify intent via OpenAI
+4. Execute the appropriate handler
+5. Track tokens, cost, and status on the AgentRun record
+6. Store the assistant response in the room
 
-1. Intent classification (or direct hint)
-2. Handler execution (Chat, Crew, Action, Data, Pay)
-3. Cost tracking and room budget accumulation
-4. Response stored as assistant message in room
+## Shared Memory
+
+All agent runs are stored with structured summaries. When any handler executes, it can access prior run context from the same room. This enables cross-agent awareness:
+- \`@orq\` knows what \`@crew\` discovered
+- \`@action\` can reference \`@data\` analysis results
+- Workflows build on prior conversation context
 
 ## Cost Tracking
 
-Every agent run records token usage and estimated cost. Costs accumulate on the room's budget counter, visible in the sidebar.
+Every agent run records:
+- Token usage (input + output)
+- Estimated cost (based on model pricing)
+- Cumulative room budget
+
+Costs are visible in the activity panel and room sidebar.
 `,
   },
   {
@@ -111,30 +221,37 @@ Every agent run records token usage and estimated cost. Costs accumulate on the 
 
 ## Authentication
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| \`/api/auth/login\` | POST | Login with email/password |
-| \`/api/auth/signup\` | POST | Create new account |
-| \`/api/auth/logout\` | POST | Clear session |
-| \`/api/auth/me\` | GET | Current user info |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | \`/api/auth/login\` | Login with email and password |
+| POST | \`/api/auth/signup\` | Create a new account |
+| POST | \`/api/auth/logout\` | Clear session cookie |
+| GET | \`/api/auth/me\` | Get current user info |
 
 ## Rooms
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| \`/api/rooms\` | GET | List user's rooms |
-| \`/api/rooms\` | POST | Create room |
-| \`/api/rooms/:id/messages\` | GET | Room messages |
-| \`/api/rooms/:id/messages\` | POST | Send message |
-| \`/api/rooms/:id/run\` | POST | Trigger AI agent |
-| \`/api/rooms/:id/runs\` | GET | Agent run history |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | \`/api/rooms\` | List rooms for current user |
+| POST | \`/api/rooms\` | Create a new room |
+| GET | \`/api/rooms/:id/messages\` | Get room message history |
+| POST | \`/api/rooms/:id/messages\` | Send a message and trigger AI |
+| GET | \`/api/rooms/:id/runs\` | Get agent run history for room |
 
 ## Workflows
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| \`/api/runs/candidate-research\` | POST | Run candidate pipeline |
-| \`/api/runs/commit-digest\` | POST | Run commit digest |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | \`/api/runs/candidate-research\` | Run candidate research pipeline |
+| POST | \`/api/runs/commit-digest\` | Run commit digest pipeline |
+
+## System
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | \`/api/tools/status\` | Integration connection status |
+| GET | \`/api/composio/status\` | Composio OAuth connection info |
+| GET | \`/api/health\` | Service health check |
 `,
   },
 ];

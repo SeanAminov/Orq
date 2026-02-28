@@ -103,17 +103,13 @@ export default function ActivityPanel({ runs, tools, room, onClearChat, onClearA
           </>
         )}
 
-        {tab === "workflows" && (
-          <div className="ap-workflows">
-            <RunPanel />
-          </div>
-        )}
+        <div className="ap-workflows" style={{ display: tab === "workflows" ? "block" : "none" }}>
+          <RunPanel />
+        </div>
 
-        {tab === "docs" && (
-          <div className="ap-docs">
-            <DocsPanel />
-          </div>
-        )}
+        <div className="ap-docs" style={{ display: tab === "docs" ? "block" : "none" }}>
+          <DocsPanel />
+        </div>
       </div>
     </div>
   );
