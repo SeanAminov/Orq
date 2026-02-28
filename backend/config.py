@@ -69,6 +69,8 @@ def get_composio_tools(tool_slugs: list[str] | None = None):
     default_tools = [
         "GMAIL_FETCH_EMAILS", "GMAIL_SEND_EMAIL", "GMAIL_CREATE_EMAIL_DRAFT",
         "GOOGLEDOCS_CREATE_DOCUMENT", "GOOGLEDRIVE_LIST_FILES",
+        "GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS", "GITHUB_GET_A_REPOSITORY",
+        "GITHUB_LIST_REPOSITORIES_FOR_A_USER", "GITHUB_LIST_COMMITS",
     ]
     raw = client.tools.get_raw_composio_tools(tools=tool_slugs or default_tools)
     return provider.wrap_tools(raw)

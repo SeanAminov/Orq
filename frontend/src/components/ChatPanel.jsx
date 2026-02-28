@@ -35,7 +35,7 @@ function insertDateSeparators(messages) {
   return items;
 }
 
-export default function ChatPanel({ room, messages, loading, loadingIntent, onSend, runCostMap = {}, currentUserId }) {
+export default function ChatPanel({ room, messages, loading, loadingIntent, onSend, runCostMap = {}, currentUserId, onAction }) {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const [input, setInput] = useState("");
@@ -179,6 +179,7 @@ export default function ChatPanel({ room, messages, loading, loadingIntent, onSe
               runId={item.run_id}
               cost={costInfo?.cost}
               tokens={costInfo?.tokens}
+              onAction={onAction}
             />
           );
         })}

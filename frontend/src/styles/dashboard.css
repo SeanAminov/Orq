@@ -1270,3 +1270,28 @@
   font-family: monospace;
   white-space: nowrap;
 }
+
+/* ── Follow-up action buttons in chat bubbles ─────────────────────────── */
+.chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.chat-action-btn {
+  padding: 5px 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid var(--accent, #6c5ce7);
+  background: transparent;
+  color: var(--accent, #6c5ce7);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chat-action-btn:hover {
+  background: var(--accent, #6c5ce7);
+  color: #fff;
+}

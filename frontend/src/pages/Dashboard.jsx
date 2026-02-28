@@ -56,6 +56,26 @@ export default function Dashboard() {
     fetchRoomData(activeRoom);
   }, [activeRoom]);
 
+  // Poll for new messages every 3 seconds so multi-user chat is real-time
+  useEffect(() => {
+    if (!activeRoom || loading) return;
+    const interval = setInterval(() => {
+      fetch(`/api/rooms/${activeRoom}/messages`, { credentials: "include" })
+        .then((r) => r.json())
+        .then((data) => {
+          setMessages((prev) => {
+            // Only update if message count changed (avoids unnecessary re-renders)
+            if (data.length !== prev.length) return data;
+            // Also check if last message content differs
+            if (data.length > 0 && prev.length > 0 && data[data.length - 1].id !== prev[prev.length - 1].id) return data;
+            return prev;
+          });
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [activeRoom, loading]);
+
   const fetchRoomData = (roomId) => {
     fetch(`/api/rooms/${roomId}/messages`, { credentials: "include" })
       .then((r) => r.json())
@@ -156,6 +176,12 @@ export default function Dashboard() {
     if (activeRoom) fetchRoomData(activeRoom);
   };
 
+  // Handle follow-up action buttons (e.g., "Save as Google Doc")
+  const handleAction = (command) => {
+    if (!activeRoom || loading) return;
+    handleSend(command, true, "action");
+  };
+
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     nav("/login");
@@ -192,6 +218,7 @@ export default function Dashboard() {
         onSend={handleSend}
         runCostMap={runCostMap}
         currentUserId={user?.id}
+        onAction={handleAction}
       />
 
       <ActivityPanel

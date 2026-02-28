@@ -667,6 +667,7 @@ def _do_contribution_query(message: str, user: User, db: Session, room_id: str) 
                 "Format with markdown: use headers, bullet points, and code blocks for paths.\n"
                 "Group changes by feature or area (frontend, backend, config, etc.).\n"
                 "Be specific about file names and what the code does.\n"
+                "Do NOT use horizontal rules (---) in your response.\n"
                 f"Room members: {member_names}\n"
                 f"Repository: {owner}/{repo}"
             )},
@@ -684,11 +685,11 @@ def _do_contribution_query(message: str, user: User, db: Session, room_id: str) 
     reply = summary_resp.choices[0].message.content
     # Add metadata footer
     reply += (
-        f"\n\n---\n"
-        f"_Source: [{owner}/{repo}](https://github.com/{owner}/{repo}) | "
-        f"{len(commits)} commits | "
-        f"Author: {author or 'all'} | "
-        f"Path: {path_filter or 'all'} | "
+        f"\n\n"
+        f"_Source: [{owner}/{repo}](https://github.com/{owner}/{repo}) · "
+        f"{len(commits)} commits · "
+        f"Author: {author or 'all'} · "
+        f"Path: {path_filter or 'all'} · "
         f"Last {since_days} days_"
     )
     return _cost_result(reply, total_tokens, total_cost)
@@ -801,7 +802,8 @@ def _do_github_direct_query(message: str, user: User, db: Session, room_id: str 
                 "Format with markdown: use headers, bullet points, bold for emphasis.\n"
                 "Include specific data: repo names, languages, stars, commit messages, dates.\n"
                 "Be factual -- only report what the data shows. If data is empty, say so clearly.\n"
-                "Add a link to the GitHub profile at the end."
+                "Add a link to the GitHub profile at the end.\n"
+                "Do NOT use horizontal rules (---) in your response."
             )},
             {"role": "user", "content": (
                 f"User asked: {message}\n\n"
@@ -814,7 +816,7 @@ def _do_github_direct_query(message: str, user: User, db: Session, room_id: str 
     total_cost += ci2["cost"]
 
     reply = summary_resp.choices[0].message.content
-    reply += f"\n\n---\n_Source: [github.com/{username}](https://github.com/{username})_"
+    reply += f"\n\n_Source: [github.com/{username}](https://github.com/{username})_"
     return _cost_result(reply, total_tokens, total_cost)
 
 
@@ -866,8 +868,9 @@ def _do_chat(message: str, user: User, db: Session, room_id: str = None) -> dict
         "You are Orq, an AI productivity assistant built for agentic workflows. "
         "You help users with tasks, planning, research, data analysis, and actions. "
         "You have access to CrewAI multi-agent crews, Composio app integrations "
-        "(Gmail, Google Docs, Google Drive), Snowflake data warehouse with Cortex AI, "
-        "and Skyfire payments. Keep responses concise and actionable."
+        "(Gmail, Google Docs, Google Drive, GitHub), Snowflake data warehouse with Cortex AI, "
+        "and Skyfire payments. Keep responses concise and actionable. "
+        "Do NOT use horizontal rules (---) in your responses."
         + shared_ctx
     )}]
     for m in history:
@@ -1110,9 +1113,15 @@ def _do_composio_action(message: str, user: User, db: Session, room_id: str = No
         "- 'draft email' / 'prepare email' / 'write email but don't send' -> use GMAIL_CREATE_EMAIL_DRAFT\n"
         "- 'check email' / 'read emails' / 'latest emails' / 'inbox' -> use GMAIL_FETCH_EMAILS\n"
         "- 'create doc' / 'new document' / 'write a doc' -> use GOOGLEDOCS_CREATE_DOCUMENT\n"
-        "- 'list files' / 'my drive' / 'google drive' -> use GOOGLEDRIVE_LIST_FILES\n\n"
+        "- 'list files' / 'my drive' / 'google drive' -> use GOOGLEDRIVE_LIST_FILES\n"
+        "- 'commit' / 'push to github' / 'update readme' / 'create file on github' -> use GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS\n"
+        "- 'list repos' / 'show repositories' -> use GITHUB_LIST_REPOSITORIES_FOR_A_USER\n"
+        "- 'show commits' / 'recent commits' -> use GITHUB_LIST_COMMITS\n"
+        "- 'repo details' / 'about this repo' -> use GITHUB_GET_A_REPOSITORY\n\n"
         "IMPORTANT: When the user says 'send', ALWAYS use GMAIL_SEND_EMAIL, never GMAIL_CREATE_EMAIL_DRAFT.\n"
         "Only use the draft tool when the user explicitly asks for a draft.\n\n"
+        "When the user asks to commit or push a file to GitHub, use GITHUB_CREATE_OR_UPDATE_FILE_CONTENTS.\n"
+        "The owner and repo should be extracted from context or the user's message.\n\n"
         "When composing email body content, write a complete, natural message.\n"
         "Always call a tool -- do not just describe what you would do."
     ) + room_context + shared_ctx
