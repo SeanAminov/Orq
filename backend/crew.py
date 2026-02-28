@@ -233,9 +233,16 @@ def _researcher() -> Agent:
             "warehouse, and Gmail. You can list repos, read READMEs, fetch commits, "
             "get commit details, query databases, analyze sentiment, translate text, "
             "summarize documents, and fetch emails.\n\n"
-            "IMPORTANT: When asked about a GitHub user or repository, ALWAYS use the "
-            "GitHub tools (github_list_repos, github_repo_details, github_readme, "
-            "github_list_commits). NEVER try to find GitHub info through emails."
+            "CRITICAL TOOL SELECTION RULES:\n"
+            "1. When asked about a GitHub user, profile, repos, or code: ALWAYS use "
+            "github_list_repos first to get their repositories, then github_repo_details "
+            "for detailed info, github_readme for README content, and github_list_commits "
+            "for commit history.\n"
+            "2. NEVER use fetch_emails to find GitHub info. GitHub tools give you direct access.\n"
+            "3. NEVER make up or assume repo data. Always call the actual GitHub tools.\n"
+            "4. For ANY question mentioning 'GitHub', 'repos', 'commits', 'code', or a "
+            "username like 'SeanAminov' or 'Yug-More': use GitHub tools FIRST.\n"
+            "5. Only use email tools if the user specifically asks about emails."
         ),
         tools=_github_tools + _cortex_tools + [ComposioFetchEmailsTool()],
         verbose=CREWAI_VERBOSE,
@@ -253,8 +260,11 @@ def _planner() -> Agent:
             "You are a meticulous project planner. Given raw research you "
             "produce actionable plans with priorities, dependencies, and "
             "specific tool usage recommendations. The team has access to: "
-            "GitHub (repos, commits, READMEs), Snowflake (SQL, sentiment, "
-            "translate, summarize), Gmail (read only), and Google Docs."
+            "GitHub (repos, commits, READMEs, commit details), Snowflake (SQL, sentiment, "
+            "translate, summarize), Gmail (read only), and Google Docs.\n\n"
+            "IMPORTANT: For GitHub-related tasks, ALWAYS recommend using GitHub tools "
+            "(github_list_repos, github_repo_details, github_readme, github_list_commits, "
+            "github_commit_detail). NEVER recommend using email to find GitHub information."
         ),
         verbose=CREWAI_VERBOSE,
         allow_delegation=False,
@@ -272,10 +282,16 @@ def _executor() -> Agent:
             "executes them. You can query GitHub repos and commits, query "
             "Snowflake databases, create Google Docs, fetch emails for "
             "research, and analyze data. Use your tools to get real results.\n\n"
-            "IMPORTANT: You must NEVER send emails autonomously. You can only "
+            "CRITICAL RULES:\n"
+            "1. You must NEVER send emails autonomously. You can only "
             "fetch/read emails for research. If the plan involves sending emails, "
             "skip that step and note that email sending requires explicit user "
-            "approval via the @action command."
+            "approval via the @action command.\n"
+            "2. For GitHub tasks: ALWAYS call the GitHub tools to get real data. "
+            "Use github_list_repos, github_repo_details, github_readme, "
+            "github_list_commits, github_commit_detail. NEVER make up repo data.\n"
+            "3. NEVER try to use email tools to find GitHub information.\n"
+            "4. Return actual data from tool calls, not assumptions."
         ),
         tools=_github_tools + _cortex_tools + [ComposioFetchEmailsTool(), ComposioCreateDocTool()],
         verbose=CREWAI_VERBOSE,
@@ -305,12 +321,31 @@ def run_crew(prompt: str, context: str = "") -> str:
     """
     full_input = f"{prompt}\n\nContext:\n{context}" if context else prompt
 
-    research_task = Task(
-        description=(
-            f"Research the following request thoroughly. Use your tools "
-            f"(Snowflake queries, sentiment analysis, email fetching) as needed.\n\n"
+    # Detect if this is a GitHub-related request and adjust task description
+    prompt_lower = prompt.lower()
+    is_github_task = any(kw in prompt_lower for kw in [
+        "github", "repo", "commit", "code", "developer", "profile",
+        "pushed", "pull request", "readme",
+    ])
+
+    if is_github_task:
+        research_desc = (
+            f"Research the following request using your GitHub tools. "
+            f"IMPORTANT: Use github_list_repos to list the user's repositories, "
+            f"github_repo_details for repo info, github_readme for README content, "
+            f"and github_list_commits for recent commits. "
+            f"Do NOT use email tools for this task.\n\n"
             f"Request: {full_input}"
-        ),
+        )
+    else:
+        research_desc = (
+            f"Research the following request thoroughly. Use your tools "
+            f"(GitHub repos/commits, Snowflake queries, sentiment analysis, email fetching) as needed.\n\n"
+            f"Request: {full_input}"
+        )
+
+    research_task = Task(
+        description=research_desc,
         expected_output=(
             "A detailed summary of findings with key facts, data points, "
             "and any relevant information gathered from tools."

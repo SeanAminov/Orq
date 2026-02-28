@@ -433,20 +433,42 @@ def get_room_runs(room_id: str, user: User = Depends(get_current_user), db: Sess
 
 def _classify_intent(client, message: str) -> str:
     """Use OpenAI to detect what the user wants to do."""
+    # Fast-path: if the message mentions GitHub, repos, commits, candidates,
+    # or code contributions, route directly to CREW (never DATA/Snowflake).
+    msg_lower = message.lower()
+    _crew_fast_keywords = [
+        "github", "repo", "repos", "repository", "commit", "commits",
+        "pushed", "code change", "pull request", "code pushed",
+        "candidate", "developer profile", "evaluate developer",
+        "their profile", "contribution", "who coded", "who worked on",
+        "what did", "what was added", "what was changed", "last code",
+        "latest code", "recent code", "code by", "worked on frontend",
+        "worked on backend", "added to frontend", "added to backend",
+        "git log", "commit history", "check their", "look at their",
+        "fit for", "good fit", "qualification", "interview question",
+        "hire", "hiring", "research this", "tell me about this person",
+    ]
+    if any(kw in msg_lower for kw in _crew_fast_keywords):
+        return "CREW"
+
     resp = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": (
                 "Classify the user's intent into exactly one label. Respond with ONLY the label.\n\n"
                 "CREW - complex multi-step task, research, analysis, multi-agent work, "
-                "candidate research, commit digest, anything needing multiple agents\n"
+                "candidate research, commit digest, anything needing multiple agents, "
+                "ANY question about GitHub, repositories, commits, code contributions, "
+                "developer profiles, or code changes (NEVER classify GitHub/code as DATA)\n"
                 "ACTION - send email, draft email, check emails, create Google Doc, "
                 "list Google Drive files (Google/Composio integrations)\n"
                 "DATA - sentiment analysis, translation, text summarization, "
-                "data queries (Snowflake/Cortex NLP)\n"
+                "Snowflake SQL queries on database tables (NOT code/GitHub questions)\n"
                 "PAY - Skyfire payments, balance check, payment tokens, "
                 "pay-per-query AI, anything about Skyfire\n"
                 "CHAT - general conversation, questions, help, explanations, brainstorming\n\n"
+                "IMPORTANT: Questions about code, GitHub, repositories, commits, or developers "
+                "are ALWAYS CREW, never DATA.\n\n"
                 "Return ONLY one of: CREW, ACTION, DATA, PAY, CHAT"
             )},
             {"role": "user", "content": message},
@@ -538,6 +560,11 @@ def _do_contribution_query(message: str, user: User, db: Session, room_id: str) 
         "changed in backend", "worked on frontend", "worked on backend",
         "pushed to", "latest changes", "recent changes", "what code",
         "show commits", "git log", "commit history", "what changed",
+        "last code pushed", "code pushed by", "last push", "last thing",
+        "tell me the last", "tell me what", "show me what", "what has",
+        "what have", "changes by", "changes from", "pushed by",
+        "committed by", "work done by", "last update", "recent update",
+        "code from", "built by", "developed by",
     ]
     if not any(kw in msg_lower for kw in contribution_keywords):
         return None
@@ -668,6 +695,130 @@ def _do_contribution_query(message: str, user: User, db: Session, room_id: str) 
 
 
 # ===========================================================================
+#  GITHUB DIRECT QUERY -- fast path for GitHub questions without full crew
+# ===========================================================================
+
+def _do_github_direct_query(message: str, user: User, db: Session, room_id: str = None) -> dict | None:
+    """
+    Handle direct GitHub questions by fetching real data from GitHub API
+    and summarizing with OpenAI. Returns None if we can't extract a
+    GitHub username/repo from the message.
+    """
+    client = get_openai_client()
+    if not client:
+        return None
+
+    total_tokens = 0
+    total_cost = 0.0
+
+    # Use LLM to extract GitHub info from the message
+    extract = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": (
+                "Extract GitHub information from the user's message.\n"
+                "Return JSON: {\"username\": \"...\", \"repo\": \"...\", \"query_type\": \"...\", \"author_filter\": \"...\"}\n"
+                "- username: GitHub username mentioned (e.g., 'SeanAminov', 'Yug-More')\n"
+                "- repo: specific repo name if mentioned (e.g., 'Orq'). null if not mentioned.\n"
+                "- query_type: one of 'repos' (list user's repos), 'commits' (show commits), "
+                "'repo_detail' (details about a specific repo), 'profile' (general GitHub profile overview)\n"
+                "- author_filter: if asking about commits by a specific person, their name/username. null otherwise.\n"
+                "Return empty strings if you cannot identify a GitHub username."
+            )},
+            {"role": "user", "content": message},
+        ],
+    )
+    ci = _calc_cost(extract.usage)
+    total_tokens += ci["tokens"]
+    total_cost += ci["cost"]
+    params = _safe_json(extract.choices[0].message.content)
+
+    username = params.get("username", "").strip()
+    if not username:
+        return None  # Can't identify a GitHub user, fall through to general crew
+
+    repo_name = params.get("repo", "")
+    query_type = params.get("query_type", "profile")
+    author_filter = params.get("author_filter", "")
+
+    # Fetch real GitHub data
+    github_data = {}
+    try:
+        repos = fetch_user_repos(username, max_repos=8)
+        github_data["repos"] = repos
+
+        # If specific repo mentioned, get details
+        if repo_name:
+            detail = fetch_repo_details(username, repo_name)
+            langs = fetch_repo_languages(username, repo_name)
+            commits = fetch_repo_commits(
+                username, repo_name,
+                author=author_filter or None,
+                since_days=30,
+                max_commits=15,
+            )
+            github_data["repo_detail"] = detail
+            github_data["repo_languages"] = langs
+            github_data["repo_commits"] = commits
+        else:
+            # Get details on top 3 repos
+            enriched = []
+            for r in repos[:3]:
+                if isinstance(r, dict) and "error" not in r:
+                    name = r.get("name", "")
+                    if name:
+                        detail = fetch_repo_details(username, name)
+                        langs = fetch_repo_languages(username, name)
+                        commits = fetch_repo_commits(username, name, max_commits=5, since_days=30)
+                        enriched.append({
+                            "repo": name,
+                            "detail": detail,
+                            "languages": langs,
+                            "recent_commits": commits[:5],
+                        })
+            github_data["enriched_repos"] = enriched
+
+        # Check for errors
+        if isinstance(repos, list) and len(repos) == 1 and isinstance(repos[0], dict) and "error" in repos[0]:
+            return _cost_result(
+                f"Could not fetch GitHub data for **{username}**: {repos[0].get('error', 'Unknown error')}\n\n"
+                f"Make sure the username is correct and the profile is public.",
+                total_tokens, total_cost,
+            )
+
+    except Exception as e:
+        logger.error(f"[github_direct] fetch error: {e}")
+        return _cost_result(f"Error fetching GitHub data for {username}: {e}", total_tokens, total_cost)
+
+    # Summarize with LLM
+    gh_json = json.dumps(github_data, indent=2, default=str)[:8000]
+    summary_resp = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": (
+                "You are Orq, a GitHub data analyst. Summarize the fetched GitHub data "
+                "into a clear, useful response that directly answers the user's question.\n\n"
+                "Format with markdown: use headers, bullet points, bold for emphasis.\n"
+                "Include specific data: repo names, languages, stars, commit messages, dates.\n"
+                "Be factual -- only report what the data shows. If data is empty, say so clearly.\n"
+                "Add a link to the GitHub profile at the end."
+            )},
+            {"role": "user", "content": (
+                f"User asked: {message}\n\n"
+                f"GitHub data for {username}:\n{gh_json}"
+            )},
+        ],
+    )
+    ci2 = _calc_cost(summary_resp.usage)
+    total_tokens += ci2["tokens"]
+    total_cost += ci2["cost"]
+
+    reply = summary_resp.choices[0].message.content
+    reply += f"\n\n---\n_Source: [github.com/{username}](https://github.com/{username})_"
+    return _cost_result(reply, total_tokens, total_cost)
+
+
+# ===========================================================================
 #  MODE HANDLERS
 # ===========================================================================
 
@@ -678,6 +829,18 @@ def _do_chat(message: str, user: User, db: Session, room_id: str = None) -> dict
     contrib_result = _do_contribution_query(message, user, db, room_id)
     if contrib_result is not None:
         return contrib_result
+
+    # Fast path: direct GitHub queries (when user mentions a GitHub username/repo)
+    msg_lower = message.lower()
+    _gh_chat_keywords = [
+        "github", "repo ", "repos", "repository", "commit", "commits",
+        "pushed", "code by", "last code", "latest project",
+        "github.com/",
+    ]
+    if any(kw in msg_lower for kw in _gh_chat_keywords):
+        gh_result = _do_github_direct_query(message, user, db, room_id)
+        if gh_result is not None:
+            return gh_result
 
     client = get_openai_client()
     if not client:
@@ -731,17 +894,38 @@ def _do_crew(message: str, user: User, db: Session, room_id: str = None) -> dict
         "look at github", "find on github", "search github",
         "github repos", "github repositories", "employee github",
         "developer profile", "their repos", "their repositories",
+        "find out about", "about this candidate", "about this developer",
+        "here is his github", "here is her github", "here is their github",
+        "his github", "her github", "their github",
+        "good fit", "qualification", "is a fit", "interview question",
+        "check if", "scan github", "scan repo", "scan his",
+        "scan her", "scan their", "tell me about",
+        "github.com/", "github:", "github is ", "github -",
+        "review their", "review his", "review her",
+        "tell if", "check qualification", "evaluate this",
+        "using snowflake", "using cortex", "analyze this person",
+        "analyze his", "analyze her", "analyze their",
     ]
-    if any(kw in msg_lower for kw in _candidate_keywords):
+    # Also detect GitHub URLs directly in the message
+    _has_github_url = "github.com/" in msg_lower
+    if _has_github_url or any(kw in msg_lower for kw in _candidate_keywords):
         client = get_openai_client()
         if client:
             extract = client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": (
-                        "Extract from the user's message: github_username, target_role, candidate_name. "
-                        "Return JSON: {\"github_username\": \"...\", \"target_role\": \"...\", \"candidate_name\": \"...\"}. "
-                        "Use empty string if not found."
+                        "Extract GitHub and candidate information from the user's message.\n"
+                        "Return JSON: {\"github_username\": \"...\", \"target_role\": \"...\", \"candidate_name\": \"...\"}\n\n"
+                        "Rules for extraction:\n"
+                        "- github_username: Extract the GitHub username. Look for:\n"
+                        "  * URLs like 'github.com/USERNAME' or 'https://github.com/USERNAME' -> extract USERNAME\n"
+                        "  * Phrases like 'github Yug-More' or 'github: SeanAminov' -> extract the username\n"
+                        "  * 'his github is X' or 'github name X' -> extract X\n"
+                        "  * Just a username mentioned in context of GitHub -> extract it\n"
+                        "- target_role: The role/position being evaluated for. Default to 'Software Engineer' if not specified.\n"
+                        "- candidate_name: The person's real name if mentioned (not their GitHub username).\n\n"
+                        "Use empty string if not found. ALWAYS try to extract a github_username."
                     )},
                     {"role": "user", "content": message},
                 ],
@@ -770,6 +954,17 @@ def _do_crew(message: str, user: User, db: Session, room_id: str = None) -> dict
     contrib_result = _do_contribution_query(message, user, db, room_id)
     if contrib_result is not None:
         return contrib_result
+
+    # Fast path: direct GitHub query -- user mentions a GitHub username or repo
+    # but it's not a full candidate research (e.g., "tell me about SeanAminov's repos")
+    _gh_direct_keywords = [
+        "github", "repo ", "repos", "repository", "commit", "commits",
+        "pushed", "code by", "last code", "latest project",
+    ]
+    if any(kw in msg_lower for kw in _gh_direct_keywords):
+        result = _do_github_direct_query(message, user, db, room_id)
+        if result is not None:
+            return result
 
     if any(kw in msg_lower for kw in ["commit digest", "what was pushed", "commit summary",
                                        "commits from", "digest of commits"]):
