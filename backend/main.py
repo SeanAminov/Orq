@@ -30,6 +30,10 @@ from config import (
 from crew import run_crew
 from candidate_crew import run_candidate_research
 from digest_crew import run_commit_digest
+from github_tools import (
+    fetch_user_repos, fetch_repo_details, fetch_repo_languages,
+    fetch_repo_commits, fetch_commit_details,
+)
 
 # ---------------------------------------------------------------------------
 # App lifecycle
@@ -513,12 +517,168 @@ def _get_shared_context(db: Session, room_id: str = None, limit: int = 15) -> st
 
 
 # ===========================================================================
+#  CODE CONTRIBUTION QUERY -- fast GitHub API path for room-linked repos
+# ===========================================================================
+
+def _do_contribution_query(message: str, user: User, db: Session, room_id: str) -> dict | None:
+    """
+    Detect contribution-related questions and answer them using the
+    room's linked github_repo. Returns None if this isn't a contribution
+    query or the room has no linked repo.
+
+    Handles: "what did X add", "X's commits", "who worked on frontend",
+    "last changes to backend", "show me recent code changes", etc.
+    """
+    msg_lower = message.lower()
+    contribution_keywords = [
+        "what did", "who coded", "who worked", "who added", "who pushed",
+        "who committed", "last commit", "recent commit", "code change",
+        "what was added", "what was changed", "contribution", "wrote code",
+        "added to frontend", "added to backend", "changed in frontend",
+        "changed in backend", "worked on frontend", "worked on backend",
+        "pushed to", "latest changes", "recent changes", "what code",
+        "show commits", "git log", "commit history", "what changed",
+    ]
+    if not any(kw in msg_lower for kw in contribution_keywords):
+        return None
+
+    if not room_id:
+        return None
+
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room or not room.github_repo:
+        return None
+
+    client = get_openai_client()
+    if not client:
+        return _cost_result("OpenAI not configured.")
+
+    total_tokens = 0
+    total_cost = 0.0
+
+    # Parse the repo (owner/repo format)
+    repo_parts = room.github_repo.strip().split("/")
+    if len(repo_parts) < 2:
+        return None
+    owner = repo_parts[-2]
+    repo = repo_parts[-1]
+
+    # Use LLM to extract author, path, and timeframe from the message
+    extract = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": (
+                "Extract from the user's message about code contributions.\n"
+                "Return JSON: {\"author\": \"...\", \"path_filter\": \"...\", \"since_days\": 7}\n"
+                "- author: the GitHub username or name of the person they're asking about. null if asking about all contributors.\n"
+                "- path_filter: the directory/path filter like 'frontend/' or 'backend/' or 'src/'. null if no specific path.\n"
+                "- since_days: how many days back to look. Default 7.\n"
+                "Use null for missing fields."
+            )},
+            {"role": "user", "content": message},
+        ],
+    )
+    ci = _calc_cost(extract.usage)
+    total_tokens += ci["tokens"]
+    total_cost += ci["cost"]
+    params = _safe_json(extract.choices[0].message.content)
+
+    author = params.get("author")
+    path_filter = params.get("path_filter")
+    since_days = params.get("since_days", 7) or 7
+
+    # Fetch commits from GitHub API
+    commits = fetch_repo_commits(
+        owner, repo,
+        author=author,
+        since_days=since_days,
+        max_commits=20,
+        path_filter=path_filter,
+    )
+
+    if not commits or (isinstance(commits, list) and len(commits) == 1 and isinstance(commits[0], dict) and "error" in commits[0]):
+        error_msg = commits[0].get("error", "Unknown error") if commits else "No data"
+        return _cost_result(
+            f"Could not fetch commits from **{owner}/{repo}**: {error_msg}\n\n"
+            f"_Searched: author={author or 'all'}, path={path_filter or 'all'}, last {since_days} days_",
+            total_tokens, total_cost,
+        )
+
+    # Get detailed info for up to 5 most recent commits
+    detailed_commits = []
+    for c in commits[:5]:
+        sha = c.get("sha", "")
+        if sha:
+            detail = fetch_commit_details(owner, repo, sha)
+            if isinstance(detail, dict) and "error" not in detail:
+                detailed_commits.append(detail)
+            else:
+                detailed_commits.append(c)
+        else:
+            detailed_commits.append(c)
+
+    # Build context and summarize with LLM
+    commit_data = json.dumps(detailed_commits, indent=2, default=str)[:6000]
+    all_commits_summary = json.dumps(commits, indent=2, default=str)[:3000]
+
+    # Get room member info for name resolution
+    members = (
+        db.query(User)
+        .join(RoomMember, RoomMember.user_id == User.id)
+        .filter(RoomMember.room_id == room_id)
+        .all()
+    )
+    member_names = ", ".join(f"{m.name} ({m.email})" for m in members)
+
+    summary_resp = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": (
+                "You are Orq, a code contribution analyst. Summarize the commit data "
+                "into a clear, useful response. Focus on WHAT was built/changed, "
+                "which files were affected, and the impact.\n\n"
+                "Format with markdown: use headers, bullet points, and code blocks for paths.\n"
+                "Group changes by feature or area (frontend, backend, config, etc.).\n"
+                "Be specific about file names and what the code does.\n"
+                f"Room members: {member_names}\n"
+                f"Repository: {owner}/{repo}"
+            )},
+            {"role": "user", "content": (
+                f"User asked: {message}\n\n"
+                f"Detailed commits (last {len(detailed_commits)}):\n{commit_data}\n\n"
+                f"All commits summary ({len(commits)} total):\n{all_commits_summary}"
+            )},
+        ],
+    )
+    ci2 = _calc_cost(summary_resp.usage)
+    total_tokens += ci2["tokens"]
+    total_cost += ci2["cost"]
+
+    reply = summary_resp.choices[0].message.content
+    # Add metadata footer
+    reply += (
+        f"\n\n---\n"
+        f"_Source: [{owner}/{repo}](https://github.com/{owner}/{repo}) | "
+        f"{len(commits)} commits | "
+        f"Author: {author or 'all'} | "
+        f"Path: {path_filter or 'all'} | "
+        f"Last {since_days} days_"
+    )
+    return _cost_result(reply, total_tokens, total_cost)
+
+
+# ===========================================================================
 #  MODE HANDLERS
 # ===========================================================================
 
 # --- 1. Chat (OpenAI) -----------------------------------------------------
 
 def _do_chat(message: str, user: User, db: Session, room_id: str = None) -> dict:
+    # Fast path: code contribution queries use GitHub API directly
+    contrib_result = _do_contribution_query(message, user, db, room_id)
+    if contrib_result is not None:
+        return contrib_result
+
     client = get_openai_client()
     if not client:
         return _cost_result("OpenAI is not configured. Set OPENAI_API_KEY in .env.")
@@ -562,10 +722,17 @@ def _do_crew(message: str, user: User, db: Session, room_id: str = None) -> dict
     total_tokens = 0
     total_cost = 0.0
 
-    if any(kw in msg_lower for kw in ["research candidate", "github profile", "evaluate developer",
-                                       "candidate diligence", "technical assessment", "review github",
-                                       "check candidate", "analyze candidate", "look at candidate",
-                                       "research github", "github user", "candidate research"]):
+    _candidate_keywords = [
+        "research candidate", "github profile", "evaluate developer",
+        "candidate diligence", "technical assessment", "review github",
+        "check candidate", "analyze candidate", "look at candidate",
+        "research github", "github user", "candidate research",
+        "look up github", "check github", "check their github",
+        "look at github", "find on github", "search github",
+        "github repos", "github repositories", "employee github",
+        "developer profile", "their repos", "their repositories",
+    ]
+    if any(kw in msg_lower for kw in _candidate_keywords):
         client = get_openai_client()
         if client:
             extract = client.chat.completions.create(
@@ -599,8 +766,13 @@ def _do_crew(message: str, user: User, db: Session, room_id: str = None) -> dict
                     total_cost += 500 / 1000 * _COST_PER_1K_OUTPUT
                     return _cost_result(f"Candidate research failed: {e}", total_tokens, total_cost)
 
+    # Fast path: code contribution query (uses room's linked repo)
+    contrib_result = _do_contribution_query(message, user, db, room_id)
+    if contrib_result is not None:
+        return contrib_result
+
     if any(kw in msg_lower for kw in ["commit digest", "what was pushed", "commit summary",
-                                       "code changes", "what did", "commits from"]):
+                                       "commits from", "digest of commits"]):
         client = get_openai_client()
         if client:
             extract = client.chat.completions.create(

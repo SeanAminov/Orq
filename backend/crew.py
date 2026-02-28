@@ -17,6 +17,10 @@ from config import (
     get_snowflake_connection, get_openai_client,
     execute_composio_tool,
 )
+from github_tools import (
+    GitHubListReposTool, GitHubRepoDetailsTool,
+    GitHubReadmeTool, GitHubCommitsTool, GitHubCommitDetailTool,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +208,14 @@ _cortex_tools = [
     SnowflakeQueryTool(),
 ]
 
+_github_tools = [
+    GitHubListReposTool(),
+    GitHubRepoDetailsTool(),
+    GitHubReadmeTool(),
+    GitHubCommitsTool(),
+    GitHubCommitDetailTool(),
+]
+
 _composio_tools = [
     ComposioFetchEmailsTool(),
     ComposioSendEmailTool(),
@@ -212,17 +224,20 @@ _composio_tools = [
 
 
 def _researcher() -> Agent:
-    """Gathers context: queries data, fetches emails, analyzes sentiment."""
+    """Gathers context: queries GitHub, data warehouse, and email."""
     return Agent(
         role="Researcher",
         goal="Find accurate, relevant information to support the user's request",
         backstory=(
-            "You are an expert research analyst with access to Snowflake data warehouse "
-            "and Gmail. You can query databases, analyze sentiment of text, translate "
-            "languages, summarize documents, and fetch emails. Use your tools to gather "
-            "the facts the team needs."
+            "You are an expert research analyst with access to GitHub, Snowflake data "
+            "warehouse, and Gmail. You can list repos, read READMEs, fetch commits, "
+            "get commit details, query databases, analyze sentiment, translate text, "
+            "summarize documents, and fetch emails.\n\n"
+            "IMPORTANT: When asked about a GitHub user or repository, ALWAYS use the "
+            "GitHub tools (github_list_repos, github_repo_details, github_readme, "
+            "github_list_commits). NEVER try to find GitHub info through emails."
         ),
-        tools=_cortex_tools + [ComposioFetchEmailsTool()],
+        tools=_github_tools + _cortex_tools + [ComposioFetchEmailsTool()],
         verbose=CREWAI_VERBOSE,
         allow_delegation=False,
         llm=OPENAI_MODEL,
@@ -237,8 +252,9 @@ def _planner() -> Agent:
         backstory=(
             "You are a meticulous project planner. Given raw research you "
             "produce actionable plans with priorities, dependencies, and "
-            "specific tool usage recommendations. You know the team has "
-            "access to Snowflake, Gmail, Google Docs, and Google Drive."
+            "specific tool usage recommendations. The team has access to: "
+            "GitHub (repos, commits, READMEs), Snowflake (SQL, sentiment, "
+            "translate, summarize), Gmail (read only), and Google Docs."
         ),
         verbose=CREWAI_VERBOSE,
         allow_delegation=False,
@@ -247,21 +263,21 @@ def _planner() -> Agent:
 
 
 def _executor() -> Agent:
-    """Carries out the plan -- queries data, creates docs, analyzes results."""
+    """Carries out the plan -- queries GitHub, data, creates docs."""
     return Agent(
         role="Executor",
         goal="Execute the plan by taking real-world actions and returning results",
         backstory=(
             "You are a hands-on engineer who takes the planner's steps and "
-            "executes them. You can query Snowflake databases, create Google "
-            "Docs, fetch emails for research, and analyze data. Use your tools "
-            "to get real results.\n\n"
+            "executes them. You can query GitHub repos and commits, query "
+            "Snowflake databases, create Google Docs, fetch emails for "
+            "research, and analyze data. Use your tools to get real results.\n\n"
             "IMPORTANT: You must NEVER send emails autonomously. You can only "
             "fetch/read emails for research. If the plan involves sending emails, "
             "skip that step and note that email sending requires explicit user "
             "approval via the @action command."
         ),
-        tools=_cortex_tools + [ComposioFetchEmailsTool(), ComposioCreateDocTool()],
+        tools=_github_tools + _cortex_tools + [ComposioFetchEmailsTool(), ComposioCreateDocTool()],
         verbose=CREWAI_VERBOSE,
         allow_delegation=False,
         llm=OPENAI_MODEL,
