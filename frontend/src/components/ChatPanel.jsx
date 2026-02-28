@@ -35,7 +35,7 @@ function insertDateSeparators(messages) {
   return items;
 }
 
-export default function ChatPanel({ room, messages, loading, loadingIntent, onSend, runCostMap = {}, currentUserId, onAction }) {
+export default function ChatPanel({ room, messages, loading, loadingIntent, onSend, runCostMap = {}, currentUserId, onAction, workflowTriggers = [] }) {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const [input, setInput] = useState("");
@@ -47,11 +47,23 @@ export default function ChatPanel({ room, messages, loading, loadingIntent, onSe
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const filteredMentions = MENTION_OPTIONS.filter((opt) =>
+  // Merge built-in mentions with custom workflow triggers
+  const allMentionOptions = [
+    ...MENTION_OPTIONS,
+    ...workflowTriggers.map((wt) => ({
+      trigger: `@${wt.trigger}`,
+      label: `@${wt.trigger}`,
+      desc: wt.description || wt.name,
+      hint: "workflow",
+      isWorkflow: true,
+    })),
+  ];
+
+  const filteredMentions = allMentionOptions.filter((opt) =>
     opt.trigger.toLowerCase().startsWith(`@${mentionFilter.toLowerCase()}`)
   );
 
-  const hasAnyMention = MENTION_OPTIONS.some((opt) => input.includes(opt.trigger));
+  const hasAnyMention = allMentionOptions.some((opt) => input.includes(opt.trigger));
 
   const handleInputChange = (e) => {
     const val = e.target.value;
@@ -108,14 +120,16 @@ export default function ChatPanel({ room, messages, loading, loadingIntent, onSe
 
     let intentHint = null;
     let isAiTrigger = false;
-    for (const opt of MENTION_OPTIONS) {
+    for (const opt of allMentionOptions) {
       if (text.includes(opt.trigger)) {
         intentHint = opt.hint;
         isAiTrigger = true;
         break;
       }
     }
-    onSend(text, isAiTrigger, intentHint);
+    // Custom workflow triggers: send the full text (with @trigger) to backend
+    // The backend will detect the trigger and run the workflow
+    onSend(text, isAiTrigger, isAiTrigger && intentHint === "workflow" ? null : intentHint);
   };
 
   const itemsWithDates = insertDateSeparators(messages);
@@ -193,6 +207,7 @@ export default function ChatPanel({ room, messages, loading, loadingIntent, onSe
                loadingIntent === "data" ? "Querying Snowflake..." :
                loadingIntent === "pay" ? "Processing with Skyfire..." :
                loadingIntent === "summary" ? "Summarizing with Cortex..." :
+               loadingIntent === "workflow" ? "Running workflow..." :
                "Processing..."}
             </span>
           </div>

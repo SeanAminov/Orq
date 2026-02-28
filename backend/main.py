@@ -18,7 +18,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from database import SessionLocal, engine, Base
-from models import User, UserCredential, Message, Activity, Room, RoomMember, AgentRun
+from models import User, UserCredential, Message, Activity, Room, RoomMember, AgentRun, Memory, Workflow
 from config import (
     SECRET_KEY, OPENAI_MODEL,
     get_openai_client,
@@ -148,6 +148,18 @@ class CommitDigestBody(BaseModel):
     max_commits: int = 30
     email_to: str | None = None
     create_doc: bool = False
+
+class WorkflowStepBody(BaseModel):
+    type: str
+    prompt: str
+    tool: str | None = None
+
+class WorkflowCreateBody(BaseModel):
+    name: str
+    trigger: str
+    description: str = ""
+    steps: list[WorkflowStepBody]
+    room_id: str | None = None
 
 # ---------------------------------------------------------------------------
 # Auth routes
@@ -306,6 +318,42 @@ def run_agent_in_room(room_id: str, body: RoomRunBody, user: User = Depends(get_
         role="user", content=message, created_at=now,
     ))
     db.commit()
+
+    # extract memories from user message (async-safe, non-blocking)
+    _extract_memories(db, user, message, room_id)
+
+    # check for custom workflow triggers before intent classification
+    workflow_result = _check_workflow_trigger(message, user, db, room_id)
+    if workflow_result is not None:
+        # workflow matched — save result and return
+        run_id = str(uuid.uuid4())
+        tokens = workflow_result.get("tokens", 0)
+        cost = workflow_result.get("cost", 0.0)
+        reply = workflow_result.get("reply", "Workflow completed.")
+        db.add(AgentRun(
+            id=run_id, room_id=room_id, user_id=user.id,
+            user_name=user.name, intent="WORKFLOW", status="completed",
+            input_text=message[:200], summary=reply[:500],
+            tokens_used=str(tokens), cost_usd=f"{cost:.6f}",
+            created_at=now, completed_at=datetime.now(timezone.utc),
+        ))
+        room = db.query(Room).filter(Room.id == room_id).first()
+        if room and cost > 0:
+            prev = float(room.skyfire_budget or "0")
+            room.skyfire_budget = f"{prev + cost:.6f}"
+        db.add(Message(
+            id=str(uuid.uuid4()), room_id=room_id, user_id=user.id,
+            sender_id="assistant", sender_name="Orq",
+            role="assistant", content=reply, run_id=run_id,
+            created_at=datetime.now(timezone.utc),
+        ))
+        db.add(Activity(
+            id=str(uuid.uuid4()), user_id=user.id, user_name=user.name,
+            summary=f"[Workflow] {message[:80]}",
+            created_at=datetime.now(timezone.utc),
+        ))
+        db.commit()
+        return {"reply": reply, "intent": "workflow", "run_id": run_id, "tokens": tokens, "cost_usd": f"{cost:.6f}"}
 
     # classify intent -- use hint if provided and valid
     valid_intents = {"CREW", "ACTION", "DATA", "PAY", "CHAT"}
@@ -536,6 +584,203 @@ def _get_shared_context(db: Session, room_id: str = None, limit: int = 15) -> st
         + "\n".join(lines[-10:])
         + "\n\nUse this context to provide continuity. Reference prior results when relevant."
     )
+
+
+# ===========================================================================
+#  LEARNING MEMORY -- extract and inject user memories
+# ===========================================================================
+
+def _extract_memories(db: Session, user: User, message: str, room_id: str = None):
+    """
+    After each user message, use LLM to detect teachable facts and upsert
+    them into the Memory table. Cheap call (~100 tokens).
+    """
+    client = get_openai_client()
+    if not client:
+        return
+    try:
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": (
+                    "You are a memory extraction agent. Analyze the user's message and extract "
+                    "any teachable facts worth remembering for future use.\n\n"
+                    "Extract facts like:\n"
+                    "- Contact info: \"Yug's email is yugmore20@gmail.com\" -> {category: 'contact', subject: 'Yug', key: 'email', value: 'yugmore20@gmail.com'}\n"
+                    "- Preferences: \"I prefer dark mode\" -> {category: 'preference', subject: 'user', key: 'theme', value: 'dark mode'}\n"
+                    "- Project facts: \"Our deadline is March 15\" -> {category: 'project', subject: 'project', key: 'deadline', value: 'March 15'}\n"
+                    "- GitHub usernames: \"Sean's github is SeanAminov\" -> {category: 'contact', subject: 'Sean', key: 'github', value: 'SeanAminov'}\n"
+                    "- Roles/titles: \"Yug is the frontend lead\" -> {category: 'fact', subject: 'Yug', key: 'role', value: 'frontend lead'}\n\n"
+                    "Return a JSON array of objects with {category, subject, key, value}.\n"
+                    "Return [] if nothing worth remembering.\n"
+                    "Only extract EXPLICIT facts the user states, not inferences.\n"
+                    "Return ONLY the JSON array, no other text."
+                )},
+                {"role": "user", "content": message},
+            ],
+        )
+        text = resp.choices[0].message.content.strip()
+        memories = _safe_json_array(text)
+        if not memories:
+            return
+
+        now = datetime.now(timezone.utc)
+        for mem in memories:
+            cat = mem.get("category", "fact")
+            subj = mem.get("subject", "")
+            key = mem.get("key", "")
+            val = mem.get("value", "")
+            if not subj or not key or not val:
+                continue
+            # Upsert: update if same user+subject+key exists
+            existing = db.query(Memory).filter(
+                Memory.user_id == user.id,
+                Memory.subject == subj,
+                Memory.key == key,
+            ).first()
+            if existing:
+                existing.value = val
+                existing.source_msg = message[:300]
+                existing.updated_at = now
+            else:
+                db.add(Memory(
+                    id=str(uuid.uuid4()),
+                    user_id=user.id,
+                    room_id=room_id,
+                    category=cat,
+                    subject=subj,
+                    key=key,
+                    value=val,
+                    source_msg=message[:300],
+                    created_at=now,
+                    updated_at=now,
+                ))
+        db.commit()
+        logger.info(f"[memory] extracted {len(memories)} memories from {user.name}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[memory] extraction error: {e}")
+
+
+def _get_user_memories(db: Session, user_id: str, room_id: str = None) -> str:
+    """
+    Query Memory table for user's personal + room-scoped memories.
+    Returns formatted string block for injection into system prompts.
+    """
+    query = db.query(Memory).filter(Memory.user_id == user_id)
+    if room_id:
+        query = query.filter((Memory.room_id == room_id) | (Memory.room_id.is_(None)))
+    memories = query.order_by(Memory.updated_at.desc()).limit(50).all()
+    if not memories:
+        return ""
+    lines = []
+    for m in memories:
+        lines.append(f"- {m.subject}'s {m.key}: {m.value}")
+    return (
+        "\n\nUSER MEMORY -- Facts you've learned about this user and their contacts:\n"
+        + "\n".join(lines)
+        + "\n\nUse this memory to fill in details automatically (e.g., email addresses, "
+        "GitHub usernames, preferences). If critical info is missing for a task, ask the user."
+    )
+
+
+def _safe_json_array(text: str) -> list:
+    """Parse JSON array from LLM output, handling markdown fences."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
+    try:
+        result = json.loads(text)
+        return result if isinstance(result, list) else []
+    except json.JSONDecodeError:
+        return []
+
+
+# ===========================================================================
+#  CUSTOM WORKFLOWS -- trigger detection and sequential step execution
+# ===========================================================================
+
+def _check_workflow_trigger(message: str, user: User, db: Session, room_id: str = None) -> dict | None:
+    """
+    Check if the message starts with a custom workflow trigger.
+    Returns workflow result dict or None if no trigger matched.
+    """
+    msg_lower = message.strip().lower()
+    # Workflows are triggered by @TriggerName
+    if not msg_lower.startswith("@"):
+        return None
+    # Extract the trigger word (first word after @)
+    parts = message.strip().split(None, 1)
+    trigger_word = parts[0][1:]  # remove the @
+    if not trigger_word:
+        return None
+    # Skip built-in triggers
+    builtins = {"orq", "crew", "action", "data", "pay", "summary"}
+    if trigger_word.lower() in builtins:
+        return None
+    # Look up in Workflow table (own workflows + room-shared workflows)
+    wf_filter = Workflow.owner_id == user.id
+    if room_id:
+        wf_filter = wf_filter | (Workflow.room_id == room_id)
+    workflow = db.query(Workflow).filter(
+        Workflow.trigger.ilike(trigger_word),
+        Workflow.is_active == "true",
+        wf_filter,
+    ).first()
+    if not workflow:
+        return None
+    extra_input = parts[1] if len(parts) > 1 else ""
+    logger.info(f"[workflow] triggered '{workflow.name}' by {user.name}")
+    return _run_workflow(workflow, extra_input, user, db, room_id)
+
+
+def _run_workflow(workflow: "Workflow", extra_input: str, user: User, db: Session, room_id: str = None) -> dict:
+    """
+    Execute a workflow's steps sequentially. Each step calls an existing
+    handler. {{prev_result}} is replaced with the previous step's output.
+    """
+    try:
+        steps = json.loads(workflow.steps)
+    except json.JSONDecodeError:
+        return _cost_result(f"Workflow '{workflow.name}' has invalid steps configuration.")
+
+    total_tokens = 0
+    total_cost = 0.0
+    prev_result = extra_input or ""
+    all_replies = []
+
+    for i, step in enumerate(steps):
+        step_type = step.get("type", "chat").lower()
+        prompt = step.get("prompt", "")
+        # Replace {{prev_result}} placeholder
+        prompt = prompt.replace("{{prev_result}}", prev_result)
+        if extra_input and i == 0:
+            prompt = f"{prompt}\n\nAdditional context: {extra_input}"
+
+        logger.info(f"[workflow] step {i+1}/{len(steps)}: {step_type} — {prompt[:80]}")
+
+        handlers = {
+            "chat": _do_chat,
+            "action": _do_composio_action,
+            "crew": _do_crew,
+            "data": _do_snowflake_query,
+            "pay": _do_skyfire_payment,
+        }
+        handler = handlers.get(step_type, _do_chat)
+        try:
+            result = handler(prompt, user, db, room_id)
+            reply = result.get("reply", str(result)) if isinstance(result, dict) else str(result)
+            total_tokens += result.get("tokens", 0) if isinstance(result, dict) else 0
+            total_cost += result.get("cost", 0.0) if isinstance(result, dict) else 0.0
+        except Exception as e:
+            reply = f"Step {i+1} failed: {e}"
+            logger.error(f"[workflow] step {i+1} error: {e}")
+
+        prev_result = reply
+        all_replies.append(f"**Step {i+1}: {step_type.title()}**\n{reply}")
+
+    combined = f"**Workflow: {workflow.name}** ({len(steps)} steps)\n\n" + "\n\n".join(all_replies)
+    return _cost_result(combined, total_tokens, total_cost)
 
 
 # ===========================================================================
@@ -864,6 +1109,7 @@ def _do_chat(message: str, user: User, db: Session, room_id: str = None) -> dict
             .all()
         )[::-1]
     shared_ctx = _get_shared_context(db, room_id)
+    memory_ctx = _get_user_memories(db, user.id, room_id)
     messages = [{"role": "system", "content": (
         "You are Orq, an AI productivity assistant built for agentic workflows. "
         "You help users with tasks, planning, research, data analysis, and actions. "
@@ -871,7 +1117,7 @@ def _do_chat(message: str, user: User, db: Session, room_id: str = None) -> dict
         "(Gmail, Google Docs, Google Drive, GitHub), Snowflake data warehouse with Cortex AI, "
         "and Skyfire payments. Keep responses concise and actionable. "
         "Do NOT use horizontal rules (---) in your responses."
-        + shared_ctx
+        + memory_ctx + shared_ctx
     )}]
     for m in history:
         messages.append({"role": m.role, "content": m.content})
@@ -1019,6 +1265,9 @@ def _do_crew(message: str, user: User, db: Session, room_id: str = None) -> dict
         )[::-1]
     context = "\n".join(f"{m.role}: {m.content}" for m in history)
     shared_ctx = _get_shared_context(db, room_id)
+    memory_ctx = _get_user_memories(db, user.id, room_id)
+    if memory_ctx:
+        context += memory_ctx
     if shared_ctx:
         context += shared_ctx
     reply = run_crew(message, context)
@@ -1105,6 +1354,7 @@ def _do_composio_action(message: str, user: User, db: Session, room_id: str = No
         )[::-1]
 
     shared_ctx = _get_shared_context(db, room_id)
+    memory_ctx = _get_user_memories(db, user.id, room_id)
     system_prompt = (
         "You are Orq, an action executor with access to real app integrations.\n"
         "Given the user's request, call the appropriate tool to fulfill it.\n\n"
@@ -1126,7 +1376,7 @@ def _do_composio_action(message: str, user: User, db: Session, room_id: str = No
         "The owner and repo should be extracted from context or the user's message.\n\n"
         "When composing email body content, write a complete, natural message.\n"
         "Always call a tool -- do not just describe what you would do."
-    ) + room_context + shared_ctx
+    ) + memory_ctx + room_context + shared_ctx
 
     messages = [{"role": "system", "content": system_prompt}]
     for m in history[-6:]:
@@ -1190,6 +1440,7 @@ def _do_snowflake_query(message: str, user: User, db: Session, room_id: str = No
 
     total_tokens = 0
     total_cost = 0.0
+    memory_ctx = _get_user_memories(db, user.id, room_id)
 
     classify_resp = client.chat.completions.create(
         model=OPENAI_MODEL,
@@ -1279,6 +1530,7 @@ def _do_snowflake_query(message: str, user: User, db: Session, room_id: str = No
                         "the SQL -- no explanation, no markdown fences. "
                         "Available databases: POLICY_DB, SNOWFLAKE, USER$USER. "
                         "Default schema: PUBLIC. Use LIMIT 50 for safety."
+                        + memory_ctx
                     )},
                     {"role": "user", "content": message},
                 ],
@@ -1345,6 +1597,7 @@ def _do_skyfire_payment(message: str, user: User, db: Session, room_id: str = No
 
     total_tokens = 0
     total_cost = 0.0
+    memory_ctx = _get_user_memories(db, user.id, room_id)
 
     classify_resp = client.chat.completions.create(
         model=OPENAI_MODEL,
@@ -1625,6 +1878,124 @@ def get_messages(user: User = Depends(get_current_user), db: Session = Depends(g
 def get_activity(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     acts = db.query(Activity).order_by(Activity.created_at.desc()).limit(30).all()
     return [{"id": a.id, "user_name": a.user_name, "summary": a.summary, "created_at": str(a.created_at)} for a in acts]
+
+# ---------------------------------------------------------------------------
+# Memory API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/memories")
+def list_memories(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """List user's memories."""
+    memories = (
+        db.query(Memory)
+        .filter(Memory.user_id == user.id)
+        .order_by(Memory.updated_at.desc())
+        .limit(100)
+        .all()
+    )
+    return [
+        {
+            "id": m.id, "category": m.category, "subject": m.subject,
+            "key": m.key, "value": m.value, "room_id": m.room_id,
+            "created_at": str(m.created_at), "updated_at": str(m.updated_at),
+        }
+        for m in memories
+    ]
+
+@app.delete("/api/memories/{memory_id}")
+def delete_memory(memory_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Forget a specific memory."""
+    mem = db.query(Memory).filter(Memory.id == memory_id, Memory.user_id == user.id).first()
+    if not mem:
+        raise HTTPException(404, "Memory not found")
+    db.delete(mem)
+    db.commit()
+    return {"ok": True, "deleted": memory_id}
+
+# ---------------------------------------------------------------------------
+# Workflow API
+# ---------------------------------------------------------------------------
+
+@app.post("/api/workflows")
+def create_workflow(body: WorkflowCreateBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Create a new custom workflow."""
+    # Validate trigger doesn't clash with builtins
+    builtins = {"orq", "crew", "action", "data", "pay", "summary"}
+    if body.trigger.lower() in builtins:
+        raise HTTPException(400, f"Trigger '@{body.trigger}' is reserved. Choose a different name.")
+    # Check for duplicate trigger for this user
+    existing = db.query(Workflow).filter(
+        Workflow.trigger.ilike(body.trigger),
+        Workflow.owner_id == user.id,
+    ).first()
+    if existing:
+        raise HTTPException(409, f"You already have a workflow with trigger '@{body.trigger}'.")
+    now = datetime.now(timezone.utc)
+    wf_id = str(uuid.uuid4())
+    steps_json = json.dumps([{"type": s.type, "prompt": s.prompt, "tool": s.tool} for s in body.steps])
+    db.add(Workflow(
+        id=wf_id, name=body.name, trigger=body.trigger,
+        description=body.description, steps=steps_json,
+        owner_id=user.id, room_id=body.room_id,
+        is_active="true", created_at=now,
+    ))
+    db.commit()
+    return {"id": wf_id, "name": body.name, "trigger": body.trigger}
+
+@app.get("/api/workflows")
+def list_workflows(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """List user's workflows + shared room workflows they belong to."""
+    user_room_ids = [m.room_id for m in db.query(RoomMember).filter(RoomMember.user_id == user.id).all()]
+    wf_filter = Workflow.owner_id == user.id
+    if user_room_ids:
+        wf_filter = wf_filter | Workflow.room_id.in_(user_room_ids)
+    workflows = (
+        db.query(Workflow)
+        .filter(wf_filter)
+        .order_by(Workflow.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    results = []
+    for w in workflows:
+        try:
+            steps = json.loads(w.steps) if w.steps else []
+        except json.JSONDecodeError:
+            steps = []
+        results.append({
+            "id": w.id, "name": w.name, "trigger": w.trigger,
+            "description": w.description, "steps": steps,
+            "owner_id": w.owner_id, "room_id": w.room_id,
+            "is_active": w.is_active, "created_at": str(w.created_at),
+        })
+    return results
+
+@app.delete("/api/workflows/{workflow_id}")
+def delete_workflow(workflow_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Delete a workflow."""
+    wf = db.query(Workflow).filter(Workflow.id == workflow_id, Workflow.owner_id == user.id).first()
+    if not wf:
+        raise HTTPException(404, "Workflow not found")
+    db.delete(wf)
+    db.commit()
+    return {"ok": True, "deleted": workflow_id}
+
+@app.get("/api/workflows/triggers")
+def list_workflow_triggers(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """List active workflow triggers for autocomplete."""
+    user_room_ids = [m.room_id for m in db.query(RoomMember).filter(RoomMember.user_id == user.id).all()]
+    wf_filter = Workflow.owner_id == user.id
+    if user_room_ids:
+        wf_filter = wf_filter | Workflow.room_id.in_(user_room_ids)
+    workflows = (
+        db.query(Workflow)
+        .filter(Workflow.is_active == "true", wf_filter)
+        .all()
+    )
+    return [
+        {"trigger": w.trigger, "name": w.name, "description": w.description or ""}
+        for w in workflows
+    ]
 
 # ---------------------------------------------------------------------------
 # Tools status + Health

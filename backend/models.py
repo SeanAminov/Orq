@@ -79,3 +79,30 @@ class Activity(Base):
     user_name = Column(String, nullable=False)
     summary = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class Memory(Base):
+    __tablename__ = "memories"
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=True, index=True)
+    category = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    key = Column(String, nullable=False)
+    value = Column(Text, nullable=False)
+    source_msg = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Workflow(Base):
+    __tablename__ = "workflows"
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    trigger = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    steps = Column(Text, nullable=False)
+    owner_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=True)
+    is_active = Column(String, default="true")
+    created_at = Column(DateTime, default=datetime.utcnow)

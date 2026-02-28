@@ -1295,3 +1295,229 @@
   background: var(--accent, #6c5ce7);
   color: #fff;
 }
+
+/* ── Learning Memory section in Activity Panel ──────────────────────── */
+.ap-memory-count {
+  font-size: 0.65rem;
+  background: var(--accent, #6c5ce7);
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 6px;
+  font-weight: 600;
+}
+.ap-memories {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ap-memory-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  gap: 8px;
+}
+.ap-memory-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 0.72rem;
+  min-width: 0;
+}
+.ap-memory-subject {
+  font-weight: 700;
+  color: var(--accent, #6c5ce7);
+}
+.ap-memory-key {
+  color: var(--text-secondary);
+}
+.ap-memory-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  word-break: break-word;
+}
+.ap-memory-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.ap-memory-delete:hover {
+  opacity: 1;
+  color: #ef4444;
+}
+
+/* ── Workflow creation form + list ──────────────────────────────────── */
+.wf-create-card {
+  border: 2px dashed var(--border) !important;
+  background: transparent !important;
+}
+.wf-create-card:hover {
+  border-color: var(--accent, #6c5ce7) !important;
+}
+.wf-list {
+  margin-top: 16px;
+}
+.wf-list h4 {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.wf-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.wf-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-trigger {
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--accent, #6c5ce7);
+}
+.wf-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.wf-delete {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  padding: 0 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s;
+}
+.wf-delete:hover {
+  opacity: 1;
+  color: #ef4444;
+}
+.wf-desc {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin: 4px 0 6px;
+}
+.wf-steps-preview {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.wf-step-badge {
+  font-size: 0.62rem;
+  padding: 2px 7px;
+  background: rgba(108, 92, 231, 0.1);
+  color: var(--accent, #6c5ce7);
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Workflow create form */
+.wf-create-form .wf-trigger-input {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.wf-trigger-input .wf-at {
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--accent, #6c5ce7);
+  padding: 0 4px 0 0;
+}
+.wf-trigger-input input {
+  flex: 1;
+}
+.wf-steps-builder {
+  margin: 12px 0;
+}
+.wf-steps-builder > label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.wf-step-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.wf-step-num {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent, #6c5ce7);
+  min-width: 16px;
+  text-align: center;
+}
+.wf-step-row select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  min-width: 120px;
+}
+.wf-step-row input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+}
+.wf-step-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  padding: 0 4px;
+  opacity: 0.5;
+}
+.wf-step-remove:hover {
+  opacity: 1;
+  color: #ef4444;
+}
+.wf-add-step {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: all 0.15s;
+}
+.wf-add-step:hover {
+  border-color: var(--accent, #6c5ce7);
+  color: var(--accent, #6c5ce7);
+}
+
+/* Workflow mention badge in autocomplete */
+.mention-option .mention-trigger {
+  font-family: monospace;
+}

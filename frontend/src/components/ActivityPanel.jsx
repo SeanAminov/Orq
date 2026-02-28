@@ -24,7 +24,7 @@ function StatusDot({ status }) {
   return <span className="ap-status-dot" style={{ background: color }} />;
 }
 
-export default function ActivityPanel({ runs, tools, room, onClearChat, onClearActivity }) {
+export default function ActivityPanel({ runs, tools, room, memories, onDeleteMemory, onClearChat, onClearActivity }) {
   const [tab, setTab] = useState("activity");
 
   return (
@@ -73,6 +73,29 @@ export default function ActivityPanel({ runs, tools, room, onClearChat, onClearA
                       <div className="ap-run-time">
                         {new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Learning Memory */}
+            <div className="ap-section">
+              <h4>Memory {memories && memories.length > 0 && <span className="ap-memory-count">{memories.length}</span>}</h4>
+              {!memories || memories.length === 0 ? (
+                <p className="ap-empty">No memories yet. Orq learns facts from your messages automatically.</p>
+              ) : (
+                <div className="ap-memories">
+                  {memories.map((m) => (
+                    <div key={m.id} className="ap-memory-card">
+                      <div className="ap-memory-text">
+                        <span className="ap-memory-subject">{m.subject}</span>
+                        <span className="ap-memory-key">{m.key}</span>
+                        <span className="ap-memory-value">{m.value}</span>
+                      </div>
+                      <button className="ap-memory-delete" onClick={() => onDeleteMemory && onDeleteMemory(m.id)} title="Forget this">
+                        &times;
+                      </button>
                     </div>
                   ))}
                 </div>

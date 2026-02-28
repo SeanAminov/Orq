@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 
@@ -27,12 +27,42 @@ const RUN_TYPES = [
   },
 ];
 
+const STEP_TYPES = [
+  { value: "chat", label: "Chat" },
+  { value: "action", label: "Action (Composio)" },
+  { value: "crew", label: "Crew (CrewAI)" },
+  { value: "data", label: "Data (Snowflake)" },
+];
+
 export default function RunPanel() {
   const [runType, setRunType] = useState(null);
   const [formData, setFormData] = useState({});
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+
+  // Workflow creation state
+  const [showCreateWorkflow, setShowCreateWorkflow] = useState(false);
+  const [wfName, setWfName] = useState("");
+  const [wfTrigger, setWfTrigger] = useState("");
+  const [wfDescription, setWfDescription] = useState("");
+  const [wfSteps, setWfSteps] = useState([{ type: "chat", prompt: "" }]);
+  const [wfSaving, setWfSaving] = useState(false);
+  const [wfError, setWfError] = useState(null);
+
+  // Workflow list
+  const [workflows, setWorkflows] = useState([]);
+
+  useEffect(() => {
+    fetchWorkflows();
+  }, []);
+
+  const fetchWorkflows = () => {
+    fetch("/api/workflows", { credentials: "include" })
+      .then((r) => r.json())
+      .then(setWorkflows)
+      .catch(() => {});
+  };
 
   const handleRun = async () => {
     if (!runType) return;
@@ -67,14 +97,59 @@ export default function RunPanel() {
     }
   };
 
+  const handleCreateWorkflow = async () => {
+    if (!wfName.trim() || !wfTrigger.trim() || wfSteps.some((s) => !s.prompt.trim())) return;
+    setWfSaving(true);
+    setWfError(null);
+    try {
+      const res = await fetch("/api/workflows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: wfName,
+          trigger: wfTrigger.replace(/^@/, ""),
+          description: wfDescription,
+          steps: wfSteps,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || `Error ${res.status}`);
+      }
+      // Reset form and refresh
+      setWfName("");
+      setWfTrigger("");
+      setWfDescription("");
+      setWfSteps([{ type: "chat", prompt: "" }]);
+      setShowCreateWorkflow(false);
+      fetchWorkflows();
+    } catch (e) {
+      setWfError(e.message);
+    } finally {
+      setWfSaving(false);
+    }
+  };
+
+  const handleDeleteWorkflow = async (id) => {
+    await fetch(`/api/workflows/${id}`, { method: "DELETE", credentials: "include" });
+    fetchWorkflows();
+  };
+
+  const addStep = () => setWfSteps((prev) => [...prev, { type: "chat", prompt: "" }]);
+  const removeStep = (idx) => setWfSteps((prev) => prev.filter((_, i) => i !== idx));
+  const updateStep = (idx, field, value) =>
+    setWfSteps((prev) => prev.map((s, i) => (i === idx ? { ...s, [field]: value } : s)));
+
   const config = RUN_TYPES.find((r) => r.key === runType);
 
   return (
     <div className="run-panel">
-      {!runType && (
+      {/* Main menu: show run types + create workflow button + workflow list */}
+      {!runType && !showCreateWorkflow && (
         <div className="run-type-grid">
-          <h3>Choose a Workflow</h3>
-          <p className="run-subtitle">Multi-agent pipelines powered by CrewAI + Composio + Snowflake</p>
+          <h3>Workflows</h3>
+          <p className="run-subtitle">Built-in pipelines and custom automations</p>
           <div className="run-type-cards">
             {RUN_TYPES.map((rt) => (
               <motion.div
@@ -88,10 +163,125 @@ export default function RunPanel() {
                 <p>{rt.desc}</p>
               </motion.div>
             ))}
+            <motion.div
+              className="run-type-card wf-create-card"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setShowCreateWorkflow(true)}
+            >
+              <strong>+ Create Workflow</strong>
+              <p>Build a custom multi-step automation</p>
+            </motion.div>
           </div>
+
+          {/* Custom workflow list */}
+          {workflows.length > 0 && (
+            <div className="wf-list">
+              <h4>Your Workflows</h4>
+              {workflows.map((w) => (
+                <div key={w.id} className="wf-card">
+                  <div className="wf-card-header">
+                    <span className="wf-trigger">@{w.trigger}</span>
+                    <span className="wf-name">{w.name}</span>
+                    <button className="wf-delete" onClick={() => handleDeleteWorkflow(w.id)}>&times;</button>
+                  </div>
+                  {w.description && <p className="wf-desc">{w.description}</p>}
+                  <div className="wf-steps-preview">
+                    {w.steps.map((s, i) => (
+                      <span key={i} className="wf-step-badge">
+                        {i + 1}. {s.type}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
+      {/* Create Workflow Form */}
+      {showCreateWorkflow && (
+        <div className="run-form wf-create-form">
+          <button className="btn-back" onClick={() => { setShowCreateWorkflow(false); setWfError(null); }}>
+            &larr; Back
+          </button>
+          <h3>Create Workflow</h3>
+          <p className="run-subtitle">Define a custom multi-step automation triggered by @mention</p>
+
+          <div className="run-field">
+            <label>Workflow Name <span className="required">*</span></label>
+            <input
+              type="text"
+              placeholder="e.g. Summary Send"
+              value={wfName}
+              onChange={(e) => setWfName(e.target.value)}
+            />
+          </div>
+
+          <div className="run-field">
+            <label>Trigger <span className="required">*</span></label>
+            <div className="wf-trigger-input">
+              <span className="wf-at">@</span>
+              <input
+                type="text"
+                placeholder="e.g. SummarySend"
+                value={wfTrigger}
+                onChange={(e) => setWfTrigger(e.target.value.replace(/\s/g, ""))}
+              />
+            </div>
+          </div>
+
+          <div className="run-field">
+            <label>Description</label>
+            <input
+              type="text"
+              placeholder="e.g. Summarizes conversation and creates a Google Doc"
+              value={wfDescription}
+              onChange={(e) => setWfDescription(e.target.value)}
+            />
+          </div>
+
+          <div className="wf-steps-builder">
+            <label>Steps</label>
+            {wfSteps.map((step, idx) => (
+              <div key={idx} className="wf-step-row">
+                <span className="wf-step-num">{idx + 1}</span>
+                <select
+                  value={step.type}
+                  onChange={(e) => updateStep(idx, "type", e.target.value)}
+                >
+                  {STEP_TYPES.map((st) => (
+                    <option key={st.value} value={st.value}>{st.label}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Prompt for this step... Use {{prev_result}} for chaining"
+                  value={step.prompt}
+                  onChange={(e) => updateStep(idx, "prompt", e.target.value)}
+                />
+                {wfSteps.length > 1 && (
+                  <button className="wf-step-remove" onClick={() => removeStep(idx)}>&times;</button>
+                )}
+              </div>
+            ))}
+            <button className="wf-add-step" onClick={addStep}>+ Add Step</button>
+          </div>
+
+          {wfError && <div className="run-error">{wfError}</div>}
+
+          <button
+            className="btn-run"
+            onClick={handleCreateWorkflow}
+            disabled={wfSaving || !wfName.trim() || !wfTrigger.trim() || wfSteps.some((s) => !s.prompt.trim())}
+          >
+            {wfSaving ? "Saving..." : "Create Workflow"}
+          </button>
+        </div>
+      )}
+
+      {/* Run form for built-in workflows */}
       {runType && !result && (
         <div className="run-form">
           <button className="btn-back" onClick={() => { setRunType(null); setResult(null); }}>
@@ -157,6 +347,7 @@ export default function RunPanel() {
         </div>
       )}
 
+      {/* Run result */}
       {result && (
         <div className="run-result">
           <button className="btn-back" onClick={() => { setRunType(null); setResult(null); setFormData({}); }}>

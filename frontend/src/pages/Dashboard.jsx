@@ -19,6 +19,8 @@ export default function Dashboard() {
   const [loadingIntent, setLoadingIntent] = useState("");
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [users, setUsers] = useState([]);
+  const [memories, setMemories] = useState([]);
+  const [workflowTriggers, setWorkflowTriggers] = useState([]);
 
   // auth check
   useEffect(() => {
@@ -48,7 +50,23 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then(setUsers)
       .catch(() => {});
+    fetchMemories();
+    fetchWorkflowTriggers();
   }, [user]);
+
+  const fetchMemories = () => {
+    fetch("/api/memories", { credentials: "include" })
+      .then((r) => r.json())
+      .then(setMemories)
+      .catch(() => {});
+  };
+
+  const fetchWorkflowTriggers = () => {
+    fetch("/api/workflows/triggers", { credentials: "include" })
+      .then((r) => r.json())
+      .then(setWorkflowTriggers)
+      .catch(() => {});
+  };
 
   // load messages + runs when room changes
   useEffect(() => {
@@ -90,7 +108,7 @@ export default function Dashboard() {
   const handleSend = async (text, isAiTrigger = false, intentHint = null) => {
     if (!activeRoom || loading) return;
 
-    // strip all @mentions from the text sent to backend
+    // strip built-in @mentions from the text sent to backend (but preserve custom workflow triggers)
     const cleanText = text.replace(/@(orq|crew|action|data|pay|summary)\s*/gi, "").trim();
     if (!cleanText) return;
 
@@ -125,6 +143,9 @@ export default function Dashboard() {
           .then((r) => r.json())
           .then(setRooms)
           .catch(() => {});
+        // refresh memories (AI may have learned something)
+        fetchMemories();
+        fetchWorkflowTriggers();
       } else {
         // plain message
         await fetch(`/api/rooms/${activeRoom}/messages`, {
@@ -176,6 +197,11 @@ export default function Dashboard() {
     if (activeRoom) fetchRoomData(activeRoom);
   };
 
+  const handleDeleteMemory = async (memoryId) => {
+    await fetch(`/api/memories/${memoryId}`, { method: "DELETE", credentials: "include" });
+    fetchMemories();
+  };
+
   // Handle follow-up action buttons (e.g., "Save as Google Doc")
   const handleAction = (command) => {
     if (!activeRoom || loading) return;
@@ -219,12 +245,15 @@ export default function Dashboard() {
         runCostMap={runCostMap}
         currentUserId={user?.id}
         onAction={handleAction}
+        workflowTriggers={workflowTriggers}
       />
 
       <ActivityPanel
         runs={runs}
         tools={tools}
         room={currentRoom}
+        memories={memories}
+        onDeleteMemory={handleDeleteMemory}
         onClearChat={handleClearChat}
         onClearActivity={handleClearActivity}
       />
