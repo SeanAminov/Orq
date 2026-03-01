@@ -469,7 +469,10 @@ export default function RunPanel({ onWorkflowChange, onAction }) {
           {onAction && RUN_ACTIONS[runType] && (
             <div className="run-actions">
               {RUN_ACTIONS[runType].map((a, i) => (
-                <button key={i} className="run-action-btn" onClick={() => onAction(a.command)}>
+                <button key={i} className="run-action-btn" onClick={() => {
+                  const brief = result.candidate_brief || result.digest_markdown || "";
+                  onAction(a.command, brief);
+                }}>
                   {a.label}
                 </button>
               ))}

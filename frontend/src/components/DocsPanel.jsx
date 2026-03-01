@@ -353,18 +353,18 @@ Create reusable multi-step automations triggered by custom \`@mentions\`. Each w
 - **Crew** — Routes to CrewAI multi-agent pipeline — Use for complex research, analysis
 - **Data** — Routes to Snowflake Cortex NLP — Use for sentiment, translation, SQL
 
-## Chaining Steps with prev_result
+## Chaining Steps
 
-Use \`{{prev_result}}\` in any step prompt to reference the output from the previous step:
+Each step after the first has a **"Use output from previous step"** toggle. When enabled, the previous step's output is automatically passed into the current step's prompt — no manual placeholders needed.
 
 **Example workflow: @SummarySend**
 - Step 1 (Chat): "Summarize the conversation so far in bullet points"
-- Step 2 (Action): "Create a Google Doc titled Meeting Summary with: {{prev_result}}"
+- Step 2 (Action): "Create a Google Doc titled Meeting Summary" — toggle ON, receives Step 1's summary
 
 **Example workflow: @AnalyzeAndEmail**
 - Step 1 (Data): "Analyze sentiment of the last 5 messages"
-- Step 2 (Chat): "Write a brief report based on: {{prev_result}}"
-- Step 3 (Action): "Email the report to the team: {{prev_result}}"
+- Step 2 (Chat): "Write a brief report based on this analysis" — toggle ON, receives Step 1's output
+- Step 3 (Action): "Email the report to the team" — toggle ON, receives Step 2's report
 
 ## Using Workflows in Chat
 
@@ -420,7 +420,7 @@ Every message is analyzed for teachable facts (contacts, preferences, project de
 
 ## Custom Workflows
 
-Users create reusable multi-step automations with custom \`@triggers\`. Each step calls an existing handler (chat, action, crew, data) and passes its output to the next step via \`{{prev_result}}\`. Workflow triggers are checked before intent classification.
+Users create reusable multi-step automations with custom \`@triggers\`. Each step calls an existing handler (chat, action, crew, data) and can automatically receive the previous step's output via a toggle. Workflow triggers are checked before intent classification.
 
 ## Shared Context
 

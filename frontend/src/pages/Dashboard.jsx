@@ -15,7 +15,7 @@ export default function Dashboard() {
   const [messages, setMessages] = useState([]);
   const [runs, setRuns] = useState([]);
   const [tools, setTools] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [loadingRooms, setLoadingRooms] = useState({});   // { roomId: true } — per-room loading
   const [loadingIntent, setLoadingIntent] = useState("");
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [users, setUsers] = useState([]);
@@ -74,6 +74,9 @@ export default function Dashboard() {
     fetchRoomData(activeRoom);
   }, [activeRoom]);
 
+  // Derive loading for the active room
+  const loading = !!(activeRoom && loadingRooms[activeRoom]);
+
   // Poll for new messages every 3 seconds so multi-user chat is real-time
   useEffect(() => {
     if (!activeRoom || loading) return;
@@ -106,11 +109,13 @@ export default function Dashboard() {
   };
 
   const handleSend = async (text, isAiTrigger = false, intentHint = null) => {
-    if (!activeRoom || loading) return;
+    if (!activeRoom || loadingRooms[activeRoom]) return;
 
     // strip built-in @mentions from the text sent to backend (but preserve custom workflow triggers)
     const cleanText = text.replace(/@(orq|crew|action|data|pay|summary|research|clean)\s*/gi, "").trim();
     if (!cleanText) return;
+
+    const roomId = activeRoom;
 
     // optimistic add user message
     const tempId = `temp-${Date.now()}`;
@@ -118,7 +123,7 @@ export default function Dashboard() {
       ...prev,
       { id: tempId, role: "user", content: text, sender_name: user.name, sender_id: user.id },
     ]);
-    setLoading(true);
+    setLoadingRooms((prev) => ({ ...prev, [roomId]: true }));
     setLoadingIntent(isAiTrigger ? (intentHint || "thinking") : "");
 
     try {
@@ -165,7 +170,7 @@ export default function Dashboard() {
         { id: `err-${Date.now()}`, role: "assistant", content: "Something went wrong.", sender_name: "Orq" },
       ]);
     } finally {
-      setLoading(false);
+      setLoadingRooms((prev) => { const n = { ...prev }; delete n[roomId]; return n; });
       setLoadingIntent("");
     }
   };
@@ -211,9 +216,12 @@ export default function Dashboard() {
   };
 
   // Handle follow-up action buttons (e.g., "Save as Google Doc")
-  const handleAction = (command) => {
-    if (!activeRoom || loading) return;
-    handleSend(command, true, "action");
+  const handleAction = (command, content) => {
+    if (!activeRoom || loadingRooms[activeRoom]) return;
+    const fullCommand = content
+      ? `${command}\n\nHere is the content:\n${content}`
+      : command;
+    handleSend(fullCommand, true, "action");
   };
 
   const handleLogout = async () => {
